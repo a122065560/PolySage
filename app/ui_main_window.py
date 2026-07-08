@@ -473,27 +473,54 @@ class SettingsDialog(QDialog):
         log_info("已恢复讨论参数和开场白为默认值")
 
     def _on_restore_all_defaults(self):
-        """恢复所有默认配置（包括 AI 平台、讨论参数、LM Studio 等）。"""
+        """恢复所有默认配置（包括 AI 平台、讨论参数、LM Studio 等）。
+
+        策略：
+        - 默认平台（DeepSeek/智谱清言/通义千问/MiniMax/Kimi）：恢复为代码中的最新配置
+        - 用户手动添加的自定义平台：保留不动
+        - 讨论参数、开场白、LM Studio：恢复默认
+        - config_version：重置为 DEFAULT_CONFIG_VERSION
+        """
+        # 先识别用户自定义平台（不在默认平台名列表中的）
+        default_names = {"DeepSeek", "智谱清言", "通义千问", "MiniMax", "Kimi"}
+        user_custom_platforms = [
+            dict(p) for p in self.config_mgr.config.get("ai_platforms", [])
+            if p.get("name") not in default_names
+        ]
+
+        custom_count = len(user_custom_platforms)
+        custom_msg = ""
+        if custom_count > 0:
+            custom_names = "、".join(p["name"] for p in user_custom_platforms)
+            custom_msg = f"\n\n你的自定义平台（{custom_names}）将被保留。"
+
         reply = QMessageBox.question(
             self, "恢复所有默认",
             "确定要恢复所有默认配置吗？\n\n"
             "这将重置：\n"
-            "• AI 平台（恢复 DeepSeek、智谱清言、通义千问）\n"
+            "• AI 平台（恢复 DeepSeek、智谱清言、通义千问、MiniMax、Kimi 的默认选择器）\n"
             "• 讨论参数（轮数、超时、结束标记、结案方）\n"
             "• 开场白\n"
             "• LM Studio 配置\n\n"
-            "你的自定义平台和修改将丢失！"
+            "你对默认平台的修改将丢失！"
+            + custom_msg
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        # 用 DEFAULT_CONFIG 完全替换配置
         import copy
-        from config_manager import DEFAULT_CONFIG
-        self.config_mgr.config = copy.deepcopy(DEFAULT_CONFIG)
+        from config_manager import DEFAULT_CONFIG, DEFAULT_CONFIG_VERSION
+        # 用 DEFAULT_CONFIG 完全替换配置
+        new_config = copy.deepcopy(DEFAULT_CONFIG)
+        # 保留用户自定义平台
+        if user_custom_platforms:
+            new_config["ai_platforms"].extend(user_custom_platforms)
+        # 确保版本号是最新的
+        new_config["config_version"] = DEFAULT_CONFIG_VERSION
+        self.config_mgr.config = new_config
         self.config_mgr.save()
-        log_info("已恢复所有默认配置")
+        log_info(f"已恢复所有默认配置（版本 v{DEFAULT_CONFIG_VERSION}），保留了 {custom_count} 个自定义平台")
         self._refresh_platform_list()
-        self._show_toast("已恢复所有默认配置，请重启应用生效")
+        self._show_toast(f"已恢复所有默认配置（v{DEFAULT_CONFIG_VERSION}），请重启应用生效")
 
     def _refresh_log_info(self):
         """刷新日志信息展示（普通日志 + 异常日志）。"""

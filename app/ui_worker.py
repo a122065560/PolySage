@@ -119,6 +119,8 @@ class AIWorker:
                 )
                 if self.page:
                     log_info(f"[AIWorker:{self.name}] 页面重建成功")
+                    # 页面重建后清除思考模式缓存，使下次状态检查时重新检测思考模式
+                    self.chrome_mgr.clear_thinking_cache(self.name)
                     # 重建后等待页面加载稳定
                     await asyncio.sleep(3)
                 else:

@@ -9,13 +9,23 @@ import json
 import os
 from pathlib import Path
 
+try:
+    from logger import log_info
+except ImportError:
+    def log_info(msg): print(msg)
+
 
 # 配置目录与文件路径
 CONFIG_DIR = Path.home() / ".polysage"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
+# 默认配置版本号（每次修改 DEFAULT_CONFIG 中的选择器/思考模式时递增）
+# 用于判断用户配置是否需要同步更新默认平台的配置
+DEFAULT_CONFIG_VERSION = 1
+
 # 默认配置
 DEFAULT_CONFIG = {
+    "config_version": DEFAULT_CONFIG_VERSION,
     "chrome": {
         "debug_port": 9222,
         "user_data_dir": str(CONFIG_DIR / "chrome-data"),
@@ -151,7 +161,7 @@ DEFAULT_CONFIG = {
                 "selector": "div.current-model, div.model-name",
                 "label_selector": "div.model-name span.name",
                 "label_text": "思考",
-                "option_selector": "div[class*='dropdown'] div[class*='item'], div[class*='menu-item'], li[class*='item'], div[class*='model-item']",
+                "option_selector": "div[class*='dropdown'] div[class*='item'], div[class*='menu-item'], li[class*='item'], div[class*='model-item'], [role='option'], [role='menuitem'], div[class*='select'] div[class*='option']",
                 "option_text": "思考",
             },
         },
@@ -395,13 +405,28 @@ class ConfigManager:
         return obj
 
     def _ensure_default_platforms_enabled(self):
-        """确保默认平台配置完整且为最新版本，并自动补全新增的默认平台。"""
+        """确保默认平台配置完整且为最新版本。
+
+        策略：
+        - 首次加载（无 config_version）或 config_version 低于 DEFAULT_CONFIG_VERSION：
+          → 同步默认平台的选择器和思考模式为最新版本（用户自定义的会被覆盖）
+        - config_version 等于 DEFAULT_CONFIG_VERSION：
+          → 不覆盖用户已修改的选择器和思考模式，仅自动启用默认平台
+        - 用户手动添加的自定义平台：永远不覆盖
+        """
         # 所有默认平台都自动启用
         default_names = {"DeepSeek", "智谱清言", "通义千问", "MiniMax", "Kimi"}
         # 从 DEFAULT_CONFIG 获取最新配置（含选择器和思考模式）
         default_platforms = {p["name"]: p for p in DEFAULT_CONFIG.get("ai_platforms", [])}
         platforms = self.config.get("ai_platforms", [])
         changed = False
+
+        # 判断是否需要同步默认平台配置
+        user_version = self.config.get("config_version", 0)
+        need_sync = user_version < DEFAULT_CONFIG_VERSION
+
+        if need_sync:
+            log_info(f"配置版本 {user_version} < {DEFAULT_CONFIG_VERSION}，同步默认平台配置")
 
         # 更新已有平台的选择器和思考模式配置
         existing_names = set()
@@ -412,8 +437,8 @@ class ConfigManager:
             if name in default_names and not p.get("enabled", False):
                 p["enabled"] = True
                 changed = True
-            # 更新选择器和思考模式为最新版本
-            if name in default_platforms:
+            # 仅在需要同步时更新选择器和思考模式为最新版本
+            if name in default_platforms and need_sync:
                 latest = default_platforms[name]
                 # 同步 URL（确保地址为最新）
                 if p.get("url") != latest.get("url"):
@@ -432,6 +457,11 @@ class ConfigManager:
             if name not in existing_names:
                 platforms.append(dict(default_p))
                 changed = True
+
+        # 更新配置版本号
+        if need_sync:
+            self.config["config_version"] = DEFAULT_CONFIG_VERSION
+            changed = True
 
         if changed:
             self.save()

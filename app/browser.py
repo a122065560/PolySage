@@ -125,6 +125,19 @@ class ChromeManager:
         self._last_sent_to = {}
         self._last_reply = {}  # 记录每个AI上一次的回复文本，用于检测重复
 
+    def clear_thinking_cache(self, ai_name: str = None):
+        """清除思考模式缓存，使下次状态检查时重新检测。
+
+        Args:
+            ai_name: 指定 AI 名称。如果为 None 则清除所有缓存。
+        """
+        if ai_name:
+            self._thinking_mode_cache.pop(ai_name, None)
+            self._thinking_fail_count.pop(ai_name, None)
+        else:
+            self._thinking_mode_cache.clear()
+            self._thinking_fail_count.clear()
+
     # ------------------------------------------------------------------
     # Chrome 进程管理
     # ------------------------------------------------------------------
@@ -2595,30 +2608,70 @@ class ChromeManager:
 
                         // 点击触发器打开下拉
                         trigger.click();
-                        await new Promise(r => setTimeout(r, 1000));
+                        await new Promise(r => setTimeout(r, 1200));
 
-                        // 查找选项
                         let clicked = false;
+
+                        // 策略1：使用配置的 CSS 选择器查找选项
                         if (config.option_selector && config.option_text) {
                             const opts = document.querySelectorAll(config.option_selector);
                             for (const opt of opts) {
                                 if (opt.textContent.trim().includes(config.option_text)) {
-                                    let target = opt.parentElement;
-                                    for (let i = 0; i < 4; i++) {
+                                    let target = opt;
+                                    for (let i = 0; i < 5; i++) {
                                         if (!target) break;
-                                        const cls = (target.className || '');
-                                        if (cls.includes('item') || cls.includes('mode')) {
+                                        const cls = (target.className || '').toString();
+                                        const role = target.getAttribute('role') || '';
+                                        if (cls.includes('item') || cls.includes('mode') ||
+                                            cls.includes('option') ||
+                                            role === 'option' || role === 'menuitem' ||
+                                            target.tagName === 'LI' || target.tagName === 'BUTTON') {
                                             target.click();
                                             clicked = true;
                                             break;
                                         }
                                         target = target.parentElement;
                                     }
-                                    if (!clicked && opt.parentElement) {
-                                        opt.parentElement.click();
+                                    if (!clicked) {
+                                        opt.click();
                                         clicked = true;
                                     }
                                     break;
+                                }
+                            }
+                        }
+
+                        // 策略2：文本匹配回退 —— 搜索所有可见元素中包含选项文本的
+                        // 当 Kimi 等平台更改 DOM 结构导致 CSS 选择器失效时使用
+                        if (!clicked && config.option_text) {
+                            const allElements = document.querySelectorAll(
+                                'div, li, span, button, a, p'
+                            );
+                            for (const el of allElements) {
+                                if (el === trigger || trigger.contains(el)) continue;
+                                const text = (el.textContent || '').trim();
+                                if (text.includes(config.option_text) && text.length < 50) {
+                                    const rect = el.getBoundingClientRect();
+                                    if (rect.width > 0 && rect.height > 0) {
+                                        let clickTarget = el;
+                                        let parent = el.parentElement;
+                                        for (let i = 0; i < 3; i++) {
+                                            if (!parent) break;
+                                            const pcls = (parent.className || '').toString();
+                                            const prole = parent.getAttribute('role') || '';
+                                            if (pcls.includes('item') || pcls.includes('option') ||
+                                                pcls.includes('mode') ||
+                                                prole === 'option' || prole === 'menuitem' ||
+                                                parent.tagName === 'LI') {
+                                                clickTarget = parent;
+                                                break;
+                                            }
+                                            parent = parent.parentElement;
+                                        }
+                                        clickTarget.click();
+                                        clicked = true;
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -2725,8 +2778,8 @@ class ChromeManager:
 
             # 未找到开关
             self._thinking_fail_count[ai_name] = self._thinking_fail_count.get(ai_name, 0) + 1
-            if self._thinking_fail_count[ai_name] >= 1:
-                log_info(f"[{ai_name}] 未找到思考模式按钮，跳过（页面上可能无此按钮）")
+            if self._thinking_fail_count[ai_name] >= 3:
+                log_info(f"[{ai_name}] 未找到思考模式按钮(已重试{self._thinking_fail_count[ai_name]}次)，跳过")
                 self._thinking_mode_cache[ai_name] = True
                 return True, "已就绪"
             log_info(f"[{ai_name}] 未找到思考模式按钮(第{self._thinking_fail_count[ai_name]}次)，稍后重试")
