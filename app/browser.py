@@ -2507,7 +2507,8 @@ class ChromeManager:
                     has_login_button: false,
                     login_btn_text: '',
                     has_auth_token: false,
-                    auth_key: ''
+                    auth_key: '',
+                    has_user_element: false
                 };
 
                 // 辅助函数：解析 :has-text('xxx') 伪选择器
@@ -2608,7 +2609,7 @@ class ChromeManager:
                     }
                 }
 
-                // === 肯定指标：localStorage token 检测 ===
+                // === 肯定指标1：localStorage token 检测 ===
                 if (config.auth_storage_keys && config.auth_storage_keys.length > 0) {
                     for (const key of config.auth_storage_keys) {
                         const val = localStorage.getItem(key);
@@ -2620,6 +2621,31 @@ class ChromeManager:
                     }
                 }
 
+                // === 肯定指标2：用户元素检测（头像等，仅用配置选择器）===
+                if (config.logged_in_selector) {
+                    const sels = config.logged_in_selector.split(',').map(s => s.trim());
+                    for (const sel of sels) {
+                        try {
+                            const parsed = parseHasText(sel);
+                            if (parsed.text) {
+                                const els = document.querySelectorAll(parsed.base);
+                                for (const el of els) {
+                                    if (el.textContent.trim().includes(parsed.text) && isVisible(el)) {
+                                        r.has_user_element = true;
+                                        break;
+                                    }
+                                }
+                            } else {
+                                const el = document.querySelector(parsed.base);
+                                if (isVisible(el)) {
+                                    r.has_user_element = true;
+                                }
+                            }
+                            if (r.has_user_element) break;
+                        } catch(e) {}
+                    }
+                }
+
                 return r;
             }
         """, {
@@ -2628,11 +2654,12 @@ class ChromeManager:
             "auth_storage_keys": auth_storage_keys,
         })
 
-        # === 判定逻辑 ===
+        # === 判定逻辑（三指标）===
         has_login_button = result.get("has_login_button", False)
         has_auth_token = result.get("has_auth_token", False)
+        has_user_element = result.get("has_user_element", False)
 
-        # 1. 有登录按钮 → 未登录（否定优先）
+        # 1. 有登录按钮 → 未登录（否定优先，覆盖一切）
         if has_login_button:
             btn_text = result.get("login_btn_text", "")
             return "not_logged_in", f"检测到登录按钮（{btn_text}），请先登录"
@@ -2641,7 +2668,11 @@ class ChromeManager:
         if has_auth_token:
             return "logged_in", "已登录"
 
-        # 3. 无登录按钮 + 无 token → 未登录（保守，防止误判）
+        # 3. 无登录按钮 + 无 token + 有用户元素(头像等) → 已登录
+        if has_user_element:
+            return "logged_in", "已登录"
+
+        # 4. 无登录按钮 + 无 token + 无用户元素 → 未登录（保守）
         return "not_logged_in", "未检测到登录状态，请先登录"
 
     # ------------------------------------------------------------------
@@ -2666,18 +2697,12 @@ class ChromeManager:
         ai_name = ai_config.get("name", "未知")
         selectors = ai_config.get("selectors", {})
 
-        # 1. 检测对话框是否存在
-        input_selector = selectors.get("input_textarea", "textarea")
-        input_el = await self._try_locate(page, input_selector, state="visible", timeout=3000)
-        if input_el is None:
-            return "orange", "无对话框（页面未加载或需登录）"
-
-        # 2. 检测登录状态（必须严格确认已登录）
+        # 直接检测登录状态（check_login_status 内部已检测对话框存在性）
         login_status, login_msg = await self.check_login_status(page, ai_config)
         if login_status != "logged_in":
             return "orange", f"未登录（{login_msg}）"
 
-        # 两个条件都满足 → 变绿
+        # 已登录 → 变绿
         return "green", "已就绪"
 
     # ------------------------------------------------------------------

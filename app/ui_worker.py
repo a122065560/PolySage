@@ -84,7 +84,7 @@ class AIWorker:
                 if self._monitoring:
                     await self._check_status()
 
-                await asyncio.sleep(2)
+                await asyncio.sleep(1)  # 1秒轮询，体验优先
 
         except Exception as e:
             log_error(f"[AIWorker:{self.name}] 异常: {e}")
