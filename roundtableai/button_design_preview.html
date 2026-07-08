@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>聚慧 PolySage 按钮设计规范</title>
+<style>
+  *, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+    background: #F5F5F7;
+    color: #1D1D1F;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* ===== Page Layout ===== */
+  .page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 48px 40px 80px;
+  }
+
+  /* ===== Header ===== */
+  .header {
+    margin-bottom: 48px;
+  }
+  .header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: #1D1D1F;
+    margin-bottom: 8px;
+  }
+  .header p {
+    font-size: 15px;
+    color: #86868B;
+    max-width: 600px;
+  }
+
+  /* ===== Section ===== */
+  .section {
+    margin-bottom: 40px;
+  }
+  .section-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: #1D1D1F;
+    margin-bottom: 6px;
+    letter-spacing: -0.3px;
+  }
+  .section-desc {
+    font-size: 13px;
+    color: #86868B;
+    margin-bottom: 20px;
+  }
+
+  /* ===== Divider ===== */
+  .divider {
+    height: 1px;
+    background: #E5E5EA;
+    margin: 40px 0;
+  }
+
+  /* ===== Color Palette ===== */
+  .palette-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+  }
+  .palette-item {
+    background: #FFFFFF;
+    border: 1px solid #E5E5EA;
+    border-radius: 10px;
+    padding: 16px 12px 12px;
+    text-align: center;
+  }
+  .palette-swatch {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    margin: 0 auto 10px;
+    border: 1px solid rgba(0,0,0,0.06);
+  }
+  .palette-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #1D1D1F;
+    margin-bottom: 2px;
+  }
+  .palette-value {
+    font-size: 11px;
+    color: #86868B;
+    font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  }
+
+  /* ===== Button Showcase ===== */
+  .button-section {
+    background: #FFFFFF;
+    border: 1px solid #E5E5EA;
+    border-radius: 12px;
+    padding: 28px;
+    margin-bottom: 16px;
+  }
+  .button-section-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1D1D1F;
+    margin-bottom: 4px;
+  }
+  .button-section-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 500;
+    color: #007AFF;
+    background: #E8F2FF;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+  .button-section-desc {
+    font-size: 13px;
+    color: #86868B;
+    margin-bottom: 20px;
+  }
+
+  .states-row {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .state-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    min-width: 80px;
+  }
+  .state-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: #AEAEB2;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  /* ===== Base Button Reset ===== */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s ease;
+    user-select: none;
+    text-decoration: none;
+    white-space: nowrap;
+    outline: none;
+  }
+  .btn:focus-visible {
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.35);
+  }
+
+  /* ===== Primary Button ===== */
+  .btn-primary {
+    background: #007AFF;
+    color: #FFFFFF;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 8px;
+    min-height: 36px;
+    padding: 6px 16px;
+  }
+  .btn-primary:hover {
+    background: #0066CC;
+  }
+  .btn-primary:active {
+    background: #0055AA;
+  }
+  .btn-primary.is-pressed {
+    background: #0055AA;
+  }
+  .btn-primary.is-disabled {
+    background: #D2D2D7;
+    color: #AEAEB2;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  /* ===== Secondary Button ===== */
+  .btn-secondary {
+    background: #FFFFFF;
+    color: #007AFF;
+    font-size: 14px;
+    font-weight: 500;
+    border: 1px solid #007AFF;
+    border-radius: 8px;
+    min-height: 36px;
+    padding: 5px 16px;
+  }
+  .btn-secondary:hover {
+    background: #E8F2FF;
+  }
+  .btn-secondary:active {
+    background: #D2DFFA;
+    border-color: #0066CC;
+  }
+  .btn-secondary.is-pressed {
+    background: #D2DFFA;
+    border-color: #0066CC;
+  }
+  .btn-secondary.is-disabled {
+    background: #FFFFFF;
+    color: #AEAEB2;
+    border-color: #D2D2D7;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  /* ===== Default Button ===== */
+  .btn-default {
+    background: #FFFFFF;
+    color: #1D1D1F;
+    font-size: 14px;
+    font-weight: 500;
+    border: 1px solid #D2D2D7;
+    border-radius: 8px;
+    min-height: 36px;
+    padding: 5px 16px;
+  }
+  .btn-default:hover {
+    background: #E8E8ED;
+  }
+  .btn-default:active {
+    background: #D4D4D9;
+  }
+  .btn-default.is-pressed {
+    background: #D4D4D9;
+  }
+  .btn-default.is-disabled {
+    background: #FFFFFF;
+    color: #AEAEB2;
+    border-color: #E5E5EA;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  /* ===== Danger Button ===== */
+  .btn-danger {
+    background: #FF3B30;
+    color: #FFFFFF;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 8px;
+    min-height: 36px;
+    padding: 6px 16px;
+  }
+  .btn-danger:hover {
+    background: #E0342A;
+  }
+  .btn-danger:active {
+    background: #CC2D25;
+  }
+  .btn-danger.is-pressed {
+    background: #CC2D25;
+  }
+  .btn-danger.is-disabled {
+    background: #D2D2D7;
+    color: #AEAEB2;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  /* ===== Danger Ghost Button ===== */
+  .btn-danger-ghost {
+    background: transparent;
+    color: #FF3B30;
+    font-size: 14px;
+    font-weight: 500;
+    border: 1px solid #FF3B30;
+    border-radius: 8px;
+    min-height: 36px;
+    padding: 5px 16px;
+  }
+  .btn-danger-ghost:hover {
+    background: #FFE5E3;
+  }
+  .btn-danger-ghost:active {
+    background: #FFD6D3;
+  }
+  .btn-danger-ghost.is-pressed {
+    background: #FFD6D3;
+  }
+  .btn-danger-ghost.is-disabled {
+    background: transparent;
+    color: #AEAEB2;
+    border-color: #D2D2D7;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  /* ===== Ghost Button ===== */
+  .btn-ghost {
+    background: transparent;
+    color: #007AFF;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 8px;
+    min-height: 36px;
+    padding: 6px 12px;
+  }
+  .btn-ghost:hover {
+    background: #E8E8ED;
+  }
+  .btn-ghost:active {
+    background: #D4D4D9;
+  }
+  .btn-ghost.is-pressed {
+    background: #D4D4D9;
+  }
+  .btn-ghost.is-disabled {
+    background: transparent;
+    color: #AEAEB2;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  /* ===== Icon Button ===== */
+  .btn-icon {
+    background: transparent;
+    color: #86868B;
+    font-size: 16px;
+    border-radius: 8px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .btn-icon:hover {
+    background: #E8E8ED;
+    color: #1D1D1F;
+  }
+  .btn-icon:active {
+    background: #D4D4D9;
+  }
+  .btn-icon.is-pressed {
+    background: #D4D4D9;
+    color: #1D1D1F;
+  }
+  .btn-icon.is-disabled {
+    background: transparent;
+    color: #D2D2D7;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+  .btn-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* ===== Small Button ===== */
+  .btn-small {
+    background: #E8E8ED;
+    color: #1D1D1F;
+    font-size: 12px;
+    font-weight: 500;
+    border: none;
+    border-radius: 6px;
+    height: 26px;
+    padding: 0 10px;
+  }
+  .btn-small:hover {
+    background: #D4D4D9;
+  }
+  .btn-small:active {
+    background: #C7C7CC;
+  }
+  .btn-small.is-pressed {
+    background: #C7C7CC;
+  }
+  .btn-small.is-disabled {
+    background: #F0F0F2;
+    color: #AEAEB2;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  /* ===== Context Demo: Sidebar ===== */
+  .context-demo {
+    background: #FFFFFF;
+    border: 1px solid #E5E5EA;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .context-demo-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #E5E5EA;
+  }
+  .traffic-light {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+  .traffic-light.red { background: #FF5F57; }
+  .traffic-light.yellow { background: #FEBC2E; }
+  .traffic-light.green { background: #28C840; }
+  .context-demo-title-bar {
+    flex: 1;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1D1D1F;
+  }
+  .context-demo-body {
+    display: flex;
+    min-height: 360px;
+  }
+
+  /* Sidebar */
+  .demo-sidebar {
+    width: 240px;
+    background: #F5F5F7;
+    border-right: 1px solid #E5E5EA;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .demo-sidebar-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: #86868B;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .demo-sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #1D1D1F;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: default;
+  }
+  .demo-sidebar-item.active {
+    background: #E8F2FF;
+    color: #007AFF;
+    font-weight: 500;
+  }
+  .demo-sidebar-icon {
+    width: 16px;
+    height: 16px;
+    opacity: 0.6;
+  }
+
+  /* Main Content */
+  .demo-main {
+    flex: 1;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .demo-main h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1D1D1F;
+  }
+  .demo-main p {
+    font-size: 13px;
+    color: #86868B;
+    max-width: 440px;
+  }
+
+  .demo-card {
+    background: #F5F5F7;
+    border: 1px solid #E5E5EA;
+    border-radius: 10px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .demo-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1D1D1F;
+  }
+  .demo-card-desc {
+    font-size: 12px;
+    color: #86868B;
+  }
+
+  .demo-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: 4px;
+  }
+  .demo-actions-right {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  /* Demo dialog */
+  .demo-dialog-overlay {
+    position: relative;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+    min-height: 140px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .demo-dialog {
+    background: #FFFFFF;
+    border-radius: 12px;
+    padding: 24px;
+    width: 360px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+  }
+  .demo-dialog h4 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1D1D1F;
+    margin-bottom: 6px;
+  }
+  .demo-dialog p {
+    font-size: 13px;
+    color: #86868B;
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+  .demo-dialog-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+
+  /* ===== Specs Table ===== */
+  .specs-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .specs-table th {
+    text-align: left;
+    padding: 8px 12px;
+    background: #F5F5F7;
+    color: #86868B;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    border-bottom: 1px solid #E5E5EA;
+  }
+  .specs-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #E5E5EA;
+    color: #1D1D1F;
+  }
+  .specs-table tr:last-child td {
+    border-bottom: none;
+  }
+  .specs-table code {
+    font-family: "SF Mono", "Menlo", "Monaco", monospace;
+    font-size: 12px;
+    background: #F5F5F7;
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: #007AFF;
+  }
+
+  /* ===== Footer ===== */
+  .footer {
+    text-align: center;
+    font-size: 12px;
+    color: #AEAEB2;
+    margin-top: 48px;
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <h1>聚慧 PolySage 按钮设计规范</h1>
+    <p>macOS 桌面端应用的统一按钮设计系统。涵盖所有按钮类型及其交互状态，确保界面视觉一致性与交互体验的统一。</p>
+  </div>
+
+  <!-- Color Palette -->
+  <div class="section">
+    <div class="section-title">色彩参考</div>
+    <div class="section-desc">按钮设计系统所使用的全部色彩定义</div>
+    <div class="palette-grid">
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#007AFF;"></div>
+        <div class="palette-name">主色</div>
+        <div class="palette-value">#007AFF</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#0066CC;"></div>
+        <div class="palette-name">主色悬停</div>
+        <div class="palette-value">#0066CC</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#0055AA;"></div>
+        <div class="palette-name">主色按下</div>
+        <div class="palette-value">#0055AA</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#E8F2FF;"></div>
+        <div class="palette-name">主色浅色</div>
+        <div class="palette-value">#E8F2FF</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#FF3B30;"></div>
+        <div class="palette-name">危险色</div>
+        <div class="palette-value">#FF3B30</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#E0342A;"></div>
+        <div class="palette-name">危险色悬停</div>
+        <div class="palette-value">#E0342A</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#CC2D25;"></div>
+        <div class="palette-name">危险色按下</div>
+        <div class="palette-value">#CC2D25</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#FFE5E3;"></div>
+        <div class="palette-name">危险色浅色</div>
+        <div class="palette-value">#FFE5E3</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#34C759;"></div>
+        <div class="palette-name">成功色</div>
+        <div class="palette-value">#34C759</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#E8FAF0;"></div>
+        <div class="palette-name">成功色浅色</div>
+        <div class="palette-value">#E8FAF0</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#FF9500;"></div>
+        <div class="palette-name">警告色</div>
+        <div class="palette-value">#FF9500</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#FFF3E0;"></div>
+        <div class="palette-name">警告色浅色</div>
+        <div class="palette-value">#FFF3E0</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#F5F5F7;"></div>
+        <div class="palette-name">窗口背景</div>
+        <div class="palette-value">#F5F5F7</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#FFFFFF; border: 1px solid #E5E5EA;"></div>
+        <div class="palette-name">面板背景</div>
+        <div class="palette-value">#FFFFFF</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#D2D2D7;"></div>
+        <div class="palette-name">边框色</div>
+        <div class="palette-value">#D2D2D7</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#E5E5EA;"></div>
+        <div class="palette-name">浅边框色</div>
+        <div class="palette-value">#E5E5EA</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#1D1D1F;"></div>
+        <div class="palette-name">主要文字</div>
+        <div class="palette-value">#1D1D1F</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#86868B;"></div>
+        <div class="palette-name">次要文字</div>
+        <div class="palette-value">#86868B</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#AEAEB2;"></div>
+        <div class="palette-name">三级文字</div>
+        <div class="palette-value">#AEAEB2</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#E8E8ED;"></div>
+        <div class="palette-name">悬停背景</div>
+        <div class="palette-value">#E8E8ED</div>
+      </div>
+      <div class="palette-item">
+        <div class="palette-swatch" style="background:#D4D4D9;"></div>
+        <div class="palette-name">按下背景</div>
+        <div class="palette-value">#D4D4D9</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 1. Primary Button -->
+  <div class="button-section">
+    <div class="button-section-title">
+      Primary 主要按钮
+      <span class="button-section-badge">核心</span>
+    </div>
+    <div class="button-section-desc">蓝色实心按钮，用于页面中最重要的操作。无边框，白色文字，字重 600。</div>
+    <div class="states-row">
+      <div class="state-item">
+        <span class="state-label">默认</span>
+        <button class="btn btn-primary">开始对话</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">悬停</span>
+        <button class="btn btn-primary is-pressed" style="background:#0066CC;">开始对话</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">按下</span>
+        <button class="btn btn-primary is-pressed">开始对话</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">禁用</span>
+        <button class="btn btn-primary is-disabled">开始对话</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Secondary Button -->
+  <div class="button-section">
+    <div class="button-section-title">Secondary 次要按钮</div>
+    <div class="button-section-desc">白色背景搭配蓝色边框与文字，用于辅助操作。字重 500。</div>
+    <div class="states-row">
+      <div class="state-item">
+        <span class="state-label">默认</span>
+        <button class="btn btn-secondary">导入模型</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">悬停</span>
+        <button class="btn btn-secondary" style="background:#E8F2FF;">导入模型</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">按下</span>
+        <button class="btn btn-secondary is-pressed">导入模型</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">禁用</span>
+        <button class="btn btn-secondary is-disabled">导入模型</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Default Button -->
+  <div class="button-section">
+    <div class="button-section-title">Default 默认按钮</div>
+    <div class="button-section-desc">白色背景搭配灰色边框与深色文字，用于常规操作或取消操作。</div>
+    <div class="states-row">
+      <div class="state-item">
+        <span class="state-label">默认</span>
+        <button class="btn btn-default">取消</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">悬停</span>
+        <button class="btn btn-default" style="background:#E8E8ED;">取消</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">按下</span>
+        <button class="btn btn-default is-pressed">取消</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">禁用</span>
+        <button class="btn btn-default is-disabled">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Danger Button -->
+  <div class="button-section">
+    <div class="button-section-title">
+      Danger 危险按钮
+      <span class="button-section-badge" style="color:#FF3B30; background:#FFE5E3;">警示</span>
+    </div>
+    <div class="button-section-desc">红色实心按钮，用于不可逆的危险操作（如删除、重置）。无边框，白色文字。</div>
+    <div class="states-row">
+      <div class="state-item">
+        <span class="state-label">默认</span>
+        <button class="btn btn-danger">删除对话</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">悬停</span>
+        <button class="btn btn-danger" style="background:#E0342A;">删除对话</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">按下</span>
+        <button class="btn btn-danger is-pressed">删除对话</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">禁用</span>
+        <button class="btn btn-danger is-disabled">删除对话</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. Danger Ghost Button -->
+  <div class="button-section">
+    <div class="button-section-title">Danger Ghost 危险幽灵按钮</div>
+    <div class="button-section-desc">透明背景搭配红色边框与文字，用于需要强调但非最高优先级的危险操作。</div>
+    <div class="states-row">
+      <div class="state-item">
+        <span class="state-label">默认</span>
+        <button class="btn btn-danger-ghost">清除全部</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">悬停</span>
+        <button class="btn btn-danger-ghost" style="background:#FFE5E3;">清除全部</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">按下</span>
+        <button class="btn btn-danger-ghost is-pressed">清除全部</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">禁用</span>
+        <button class="btn btn-danger-ghost is-disabled">清除全部</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. Ghost Button -->
+  <div class="button-section">
+    <div class="button-section-title">Ghost 幽灵按钮</div>
+    <div class="button-section-desc">无背景无边框，仅蓝色文字，用于次要链接式操作或工具栏中的轻量操作。</div>
+    <div class="states-row">
+      <div class="state-item">
+        <span class="state-label">默认</span>
+        <button class="btn btn-ghost">了解更多</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">悬停</span>
+        <button class="btn btn-ghost" style="background:#E8E8ED;">了解更多</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">按下</span>
+        <button class="btn btn-ghost is-pressed">了解更多</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">禁用</span>
+        <button class="btn btn-ghost is-disabled">了解更多</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. Icon Button -->
+  <div class="button-section">
+    <div class="button-section-title">Icon 图标按钮</div>
+    <div class="button-section-desc">32x32 正方形，透明背景，灰色图标居中显示。适用于工具栏、标题栏等紧凑空间。</div>
+    <div class="states-row">
+      <div class="state-item">
+        <span class="state-label">默认</span>
+        <button class="btn btn-icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 4h12M2 8h12M2 12h12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">悬停</span>
+        <button class="btn btn-icon" style="background:#E8E8ED; color:#1D1D1F;">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 4h12M2 8h12M2 12h12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">按下</span>
+        <button class="btn btn-icon is-pressed">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 4h12M2 8h12M2 12h12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">禁用</span>
+        <button class="btn btn-icon is-disabled">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 4h12M2 8h12M2 12h12"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. Small Button -->
+  <div class="button-section">
+    <div class="button-section-title">Small 小型按钮</div>
+    <div class="button-section-desc">紧凑型按钮，高度 26px，灰色背景，无描边，6px 圆角，12px 字号。适用于标签切换、筛选器等。</div>
+    <div class="states-row">
+      <div class="state-item">
+        <span class="state-label">默认</span>
+        <button class="btn btn-small">GPT-4</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">悬停</span>
+        <button class="btn btn-small" style="background:#D4D4D9;">GPT-4</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">按下</span>
+        <button class="btn btn-small is-pressed">GPT-4</button>
+      </div>
+      <div class="state-item">
+        <span class="state-label">禁用</span>
+        <button class="btn btn-small is-disabled">GPT-4</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Specs Table -->
+  <div class="section">
+    <div class="section-title">按钮规格速查</div>
+    <div class="section-desc">所有按钮类型的关键样式参数一览</div>
+    <div class="button-section" style="padding: 0; overflow: hidden;">
+      <table class="specs-table">
+        <thead>
+          <tr>
+            <th>类型</th>
+            <th>背景</th>
+            <th>边框</th>
+            <th>文字色</th>
+            <th>圆角</th>
+            <th>字重</th>
+            <th>最小高度</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Primary</strong></td>
+            <td><code>#007AFF</code></td>
+            <td>无</td>
+            <td><code>#FFFFFF</code></td>
+            <td>8px</td>
+            <td>600</td>
+            <td>36px</td>
+          </tr>
+          <tr>
+            <td><strong>Secondary</strong></td>
+            <td><code>#FFFFFF</code></td>
+            <td>1px <code>#007AFF</code></td>
+            <td><code>#007AFF</code></td>
+            <td>8px</td>
+            <td>500</td>
+            <td>36px</td>
+          </tr>
+          <tr>
+            <td><strong>Default</strong></td>
+            <td><code>#FFFFFF</code></td>
+            <td>1px <code>#D2D2D7</code></td>
+            <td><code>#1D1D1F</code></td>
+            <td>8px</td>
+            <td>500</td>
+            <td>36px</td>
+          </tr>
+          <tr>
+            <td><strong>Danger</strong></td>
+            <td><code>#FF3B30</code></td>
+            <td>无</td>
+            <td><code>#FFFFFF</code></td>
+            <td>8px</td>
+            <td>600</td>
+            <td>36px</td>
+          </tr>
+          <tr>
+            <td><strong>Danger Ghost</strong></td>
+            <td>透明</td>
+            <td>1px <code>#FF3B30</code></td>
+            <td><code>#FF3B30</code></td>
+            <td>8px</td>
+            <td>500</td>
+            <td>36px</td>
+          </tr>
+          <tr>
+            <td><strong>Ghost</strong></td>
+            <td>透明</td>
+            <td>无</td>
+            <td><code>#007AFF</code></td>
+            <td>8px</td>
+            <td>500</td>
+            <td>36px</td>
+          </tr>
+          <tr>
+            <td><strong>Icon</strong></td>
+            <td>透明</td>
+            <td>无</td>
+            <td><code>#86868B</code></td>
+            <td>8px</td>
+            <td>—</td>
+            <td>32px</td>
+          </tr>
+          <tr>
+            <td><strong>Small</strong></td>
+            <td><code>#E8E8ED</code></td>
+            <td>无</td>
+            <td><code>#1D1D1F</code></td>
+            <td>6px</td>
+            <td>500</td>
+            <td>26px</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Context Demo -->
+  <div class="section">
+    <div class="section-title">实际应用场景</div>
+    <div class="section-desc">展示按钮在 聚慧 PolySage 应用界面中的真实使用方式</div>
+
+    <!-- Mock App Window -->
+    <div class="context-demo">
+      <div class="context-demo-header">
+        <div class="traffic-light red"></div>
+        <div class="traffic-light yellow"></div>
+        <div class="traffic-light green"></div>
+        <div class="context-demo-title-bar">聚慧 PolySage</div>
+      </div>
+      <div class="context-demo-body">
+
+        <!-- Sidebar -->
+        <div class="demo-sidebar">
+          <div class="demo-sidebar-title">对话列表</div>
+          <div class="demo-sidebar-item active">
+            <svg class="demo-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="2" width="14" height="10" rx="2"/><path d="M4 14h8l-2-3H6L4 14z" opacity="0.6"/></svg>
+            AI 代码助手
+          </div>
+          <div class="demo-sidebar-item">
+            <svg class="demo-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="2" width="14" height="10" rx="2"/><path d="M4 14h8l-2-3H6L4 14z" opacity="0.6"/></svg>
+            技术文档翻译
+          </div>
+          <div class="demo-sidebar-item">
+            <svg class="demo-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="2" width="14" height="10" rx="2"/><path d="M4 14h8l-2-3H6L4 14z" opacity="0.6"/></svg>
+            产品需求分析
+          </div>
+
+          <div style="flex:1;"></div>
+
+          <div style="display: flex; gap: 6px;">
+            <button class="btn btn-icon" title="新建对话">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                <line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/>
+              </svg>
+            </button>
+            <button class="btn btn-icon" title="设置">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.1 3.1l1.4 1.4M11.5 11.5l1.4 1.4M3.1 12.9l1.4-1.4M11.5 4.5l1.4-1.4"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="demo-main">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <h3>AI 代码助手</h3>
+              <p>当前使用模型: GPT-4</p>
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button class="btn btn-small">GPT-4</button>
+              <button class="btn btn-small">Claude 3</button>
+              <button class="btn btn-small">Gemini</button>
+            </div>
+          </div>
+
+          <div class="demo-card">
+            <div class="demo-card-title">配置 API 密钥</div>
+            <div class="demo-card-desc">在开始对话之前，请先配置您的 API 密钥以连接模型服务。</div>
+            <div class="demo-actions">
+              <button class="btn btn-primary">开始对话</button>
+              <button class="btn btn-secondary">导入配置</button>
+              <button class="btn btn-ghost">跳过</button>
+              <div class="demo-actions-right">
+                <button class="btn btn-danger-ghost">重置</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="demo-card">
+            <div class="demo-card-title">对话历史管理</div>
+            <div class="demo-card-desc">管理本地保存的对话记录，您可以导出或批量删除。</div>
+            <div class="demo-actions">
+              <button class="btn btn-default">导出记录</button>
+              <button class="btn btn-default is-disabled">全选</button>
+              <div class="demo-actions-right">
+                <button class="btn btn-danger">删除所选</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="demo-dialog-overlay">
+            <div class="demo-dialog">
+              <h4>确认删除</h4>
+              <p>此操作将永久删除选中的 3 条对话记录，且无法恢复。确定要继续吗？</p>
+              <div class="demo-dialog-actions">
+                <button class="btn btn-default">取消</button>
+                <button class="btn btn-danger">删除</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Footer -->
+  <div class="footer">
+    聚慧 PolySage 按钮设计规范 &middot; 版本 1.0 &middot; 基于 macOS Human Interface Guidelines
+  </div>
+
+</div>
+
+</body>
+</html>

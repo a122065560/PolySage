@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+*.spec.bak
+
+# 虚拟环境
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# 日志
+*.log
+
+# 用户数据（不应提交）
+*.pfx
+*.key
+.env
+secrets/
+
+# Playwright
+playwright-report/
+test-results/
+
+# 构建产物
+*.dmg
+*.exe
+*.msi
+
+# 临时文件
+tmp/
+temp/

@@ -1,0 +1,234 @@
+# ============================================================
+# PolySage（聚慧）多平台发布构建工作流
+# ------------------------------------------------------------
+# 触发方式：
+#   1. 手动触发 (workflow_dispatch) —— 输入版本号
+#   2. 推送 v* 标签自动触发
+# 构建平台：macOS (ARM64) + Windows (x64)
+# 产物：PolySage-{version}-macOS.dmg / PolySage-{version}-Windows.exe
+# ============================================================
+name: 发布构建
+
+on:
+  # 手动触发，可指定版本号
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (如 v1.0.0)'
+        required: true
+        type: string
+  # 推送 v 开头的标签时自动触发
+  push:
+    tags:
+      - 'v*'
+
+# 全局环境变量
+# 版本号：手动触发时取输入值，标签触发时取标签名
+env:
+  VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+
+jobs:
+  # ============================================================
+  # Job 1: macOS 构建任务 (ARM64)
+  # ============================================================
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      # 1. 检出代码
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 2. 配置 Python 环境（内置 pip 缓存）
+      - name: 设置 Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: roundtableai/requirements.txt
+
+      # 3. 缓存 Playwright 浏览器（加速构建）
+      - name: 缓存 Playwright 浏览器
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: macos-playwright-chrome-${{ hashFiles('roundtableai/requirements.txt') }}
+          restore-keys: macos-playwright-chrome-
+
+      # 4. 安装 Python 依赖与 PyInstaller
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r roundtableai/requirements.txt pyinstaller==6.3.0
+
+      # 5. 安装 Playwright Chrome 浏览器
+      - name: 安装 Playwright Chrome
+        run: playwright install chrome
+
+      # 6. PyInstaller 打包 macOS .app
+      #    注：使用 spec 文件时，命令行 --icon/--name 等参数由 spec 内部配置决定
+      - name: PyInstaller 打包
+        working-directory: roundtableai
+        run: |
+          pyinstaller --noconfirm \
+            --target-arch arm64 \
+            --windowed \
+            --osx-bundle-identifier com.polysage.app \
+            --icon AppIcon.icns \
+            --name PolySage \
+            RoundTableAI.spec
+
+      # 7. 对 .app 进行 ad-hoc 签名（无需开发者证书）
+      - name: 代码签名 (ad-hoc)
+        run: |
+          # 移除扩展属性，避免签名问题
+          xattr -cr roundtableai/dist/PolySage.app
+          # ad-hoc 签名（使用 - 身份）
+          codesign --force --sign - roundtableai/dist/PolySage.app
+
+      # 8. 安装 create-dmg 工具
+      - name: 安装 create-dmg
+        run: brew install create-dmg
+
+      # 9. 生成 .dmg 安装包（卷名"聚慧 PolySage"）
+      - name: 生成 DMG 安装包
+        run: |
+          # 创建临时目录用于 DMG 打包（仅包含 .app）
+          mkdir -p roundtableai/dist/dmg-staging
+          cp -r roundtableai/dist/PolySage.app roundtableai/dist/dmg-staging/
+          # 使用 create-dmg 生成带应用拖拽链接的 DMG
+          # create-dmg 偶尔会产生非致命警告，只要 DMG 生成即视为成功
+          create-dmg \
+            --volname "聚慧 PolySage" \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "PolySage.app" 175 190 \
+            --app-drop-link 425 190 \
+            "roundtableai/dist/PolySage-${VERSION}-macOS.dmg" \
+            "roundtableai/dist/dmg-staging" \
+            || (echo "create-dmg 产生警告，验证 DMG 是否生成" \
+                && test -f "roundtableai/dist/PolySage-${VERSION}-macOS.dmg")
+
+      # 10. 上传构建产物
+      - name: 上传 macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: roundtableai/dist/PolySage-${{ env.VERSION }}-macOS.dmg
+          retention-days: 30
+
+  # ============================================================
+  # Job 2: Windows 构建任务 (x64)
+  # ============================================================
+  build-windows:
+    runs-on: windows-latest
+    env:
+      # 代码签名证书 (Base64 编码)，未配置时跳过签名步骤
+      CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+    steps:
+      # 1. 检出代码
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 2. 配置 Python 环境（内置 pip 缓存）
+      - name: 设置 Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: roundtableai/requirements.txt
+
+      # 3. 缓存 Playwright 浏览器（加速构建）
+      - name: 缓存 Playwright 浏览器
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\ms-playwright
+          key: windows-playwright-chrome-${{ hashFiles('roundtableai/requirements.txt') }}
+          restore-keys: windows-playwright-chrome-
+
+      # 4. 安装 Python 依赖与 PyInstaller
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r roundtableai/requirements.txt pyinstaller==6.3.0
+
+      # 5. 安装 Playwright Chrome 浏览器
+      - name: 安装 Playwright Chrome
+        run: playwright install chrome
+
+      # 6. PyInstaller 打包 Windows 可执行文件
+      #    注：spec 文件中的 BUNDLE 仅为 macOS 生成 .app，Windows 下自动跳过
+      - name: PyInstaller 打包
+        working-directory: roundtableai
+        run: |
+          pyinstaller --noconfirm --windowed --name PolySage RoundTableAI.spec
+
+      # 7. 将 Inno Setup 加入 PATH（GitHub windows-latest 已预装）
+      - name: 配置 Inno Setup
+        run: echo "C:\Program Files (x86)\Inno Setup 6" >> $GITHUB_PATH
+
+      # 8. 使用 Inno Setup 生成安装包
+      - name: 生成 Windows 安装包
+        run: iscc /DMyAppVersion=${{ env.VERSION }} installer.iss
+
+      # 9. 代码签名（仅当配置了证书时执行）
+      #    需在仓库 Secrets 中配置：
+      #    - WINDOWS_CERTIFICATE_BASE64: PFX 证书的 Base64 编码
+      #    - WINDOWS_CERTIFICATE_PASSWORD: 证书密码
+      - name: 代码签名
+        if: ${{ env.CERTIFICATE_BASE64 != '' }}
+        shell: pwsh
+        env:
+          CERT_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          # 解码 Base64 证书并写入文件
+          $certBytes = [System.Convert]::FromBase64String($env:CERTIFICATE_BASE64)
+          [System.IO.File]::WriteAllBytes("cert.pfx", $certBytes)
+          # 查找 signtool（Windows SDK 自带）
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          # 对安装包进行签名
+          & $signtool.FullName sign /f cert.pfx /p $env:CERT_PASSWORD `
+            /fd sha256 /tr http://timestamp.digicert.com /td sha256 `
+            "PolySage-${{ env.VERSION }}-Windows.exe"
+
+      # 10. 上传构建产物
+      - name: 上传 Windows 安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: PolySage-${{ env.VERSION }}-Windows.exe
+          retention-days: 30
+
+  # ============================================================
+  # Job 3: 发布 Release（依赖前两个构建任务完成）
+  # ============================================================
+  release:
+    runs-on: ubuntu-latest
+    needs: [build-macos, build-windows]
+    permissions:
+      # 创建 Release 需要写入权限
+      contents: write
+    steps:
+      # 1. 下载所有构建产物
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # 2. 列出产物文件（便于调试确认）
+      - name: 列出产物文件
+        run: find artifacts -type f
+
+      # 3. 创建 GitHub Release 并上传安装包
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: ${{ env.VERSION }}
+          files: |
+            artifacts/macos-dmg/*.dmg
+            artifacts/windows-exe/*.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
