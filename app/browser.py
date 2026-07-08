@@ -2454,20 +2454,22 @@ class ChromeManager:
     # ------------------------------------------------------------------
 
     async def check_login_status(self, page: Page, ai_config: dict) -> tuple:
-        """登录检测：以"登录按钮是否存在"为核心判断依据。
+        """登录检测：双指标并行检测。
 
-        核心逻辑：AI 网站未登录时必定显示"登录"按钮。
-        1. 有登录按钮 → 未登录（最可靠，优先级最高，覆盖一切）
-        2. 无登录按钮 + 有用户元素/token → 已登录（确认）
-        3. 无登录按钮 + 无用户元素 → 已登录（推测：无登录按钮=已登录）
+        检测两个指标：
+        A. 否定指标：有可见的"登录"按钮 → 未登录
+        B. 肯定指标：localStorage 中有认证 token → 已登录
 
+        判定优先级：
+        1. 有登录按钮 → 未登录（否定优先）
+        2. 有 token → 已登录
+        3. 都没有 → 未登录（保守，防止误判）
+
+        支持 :has-text('xxx') 伪选择器（在 JS 中解析）。
         每个 AI 可配置：
-        - logged_out_selector: 未登录时才存在的元素选择器
-        - logged_in_selector: 已登录时才存在的元素选择器
-        - auth_storage_keys: localStorage 中认证 token 的 key 列表
-
-        Returns:
-            tuple: (status, message)
+        - logged_out_selector: 登录按钮选择器（支持 :has-text()）
+        - logged_in_selector: 已登录元素选择器（支持 :has-text()）
+        - auth_storage_keys: localStorage 认证 token 的 key 列表
         """
         selectors = ai_config.get("selectors", {})
 
@@ -2494,7 +2496,7 @@ class ChromeManager:
         except Exception:
             pass
 
-        # 4. JS 检测（一次 evaluate 完成）
+        # 4. JS 检测
         logged_in_selector = selectors.get("logged_in_selector", "")
         logged_out_selector = selectors.get("logged_out_selector", "")
         auth_storage_keys = selectors.get("auth_storage_keys", [])
@@ -2504,55 +2506,92 @@ class ChromeManager:
                 const r = {
                     has_login_button: false,
                     login_btn_text: '',
-                    has_user_element: false,
                     has_auth_token: false,
-                    debug: {}
+                    auth_key: ''
                 };
 
-                // === 否定指标：登录按钮检测（最高优先级）===
-                // 策略1：配置的选择器
+                // 辅助函数：解析 :has-text('xxx') 伪选择器
+                // 返回 {baseSelector: string, text: string|null}
+                function parseHasText(selector) {
+                    const m = selector.match(/^(.+?):has-text\\(['\"](.+?)['\"]\\)$/);
+                    if (m) return {base: m[1].trim(), text: m[2]};
+                    return {base: selector.trim(), text: null};
+                }
+
+                // 辅助函数：检查元素是否可见
+                function isVisible(el) {
+                    if (!el) return false;
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width <= 0 || rect.height <= 0) return false;
+                    const style = window.getComputedStyle(el);
+                    if (style.display === 'none' || style.visibility === 'hidden') return false;
+                    return true;
+                }
+
+                // === 否定指标：登录按钮检测 ===
+                // 策略1：配置的选择器（支持 :has-text()）
                 if (config.logged_out_selector) {
                     const sels = config.logged_out_selector.split(',').map(s => s.trim());
                     for (const sel of sels) {
                         try {
-                            const el = document.querySelector(sel);
-                            if (el) {
-                                const rect = el.getBoundingClientRect();
-                                if (rect.width > 0 && rect.height > 0) {
+                            const parsed = parseHasText(sel);
+                            if (parsed.text) {
+                                // 有 :has-text()：先找基础选择器，再检查文本
+                                const els = document.querySelectorAll(parsed.base);
+                                for (const el of els) {
+                                    if (el.textContent.trim().includes(parsed.text) && isVisible(el)) {
+                                        r.has_login_button = true;
+                                        r.login_btn_text = el.textContent.trim().slice(0, 20);
+                                        break;
+                                    }
+                                }
+                            } else {
+                                // 纯 CSS 选择器
+                                const el = document.querySelector(parsed.base);
+                                if (isVisible(el)) {
                                     r.has_login_button = true;
                                     r.login_btn_text = (el.textContent || '').trim().slice(0, 20);
-                                    break;
                                 }
                             }
+                            if (r.has_login_button) break;
                         } catch(e) {}
                     }
                 }
-                // 策略2：文本搜索（精确匹配，避免误判）
+                // 策略2：通用文本搜索（精确匹配）
                 if (!r.has_login_button) {
                     const btns = document.querySelectorAll(
                         'button, a, span[role="button"], div[role="button"]'
                     );
-                    // 只匹配精确文本，不模糊匹配（避免"登录了解"等误判）
                     const loginTexts = ['登录', '登陆', '登入', '注册', '立即登录',
                                        'Sign in', 'Sign up', 'Log in', 'Login'];
                     for (const btn of btns) {
                         const text = (btn.textContent || '').trim();
                         if (text.length > 0 && text.length <= 10) {
                             for (const kw of loginTexts) {
-                                if (text === kw || text === kw + ' ' || text === ' ' + kw) {
-                                    const rect = btn.getBoundingClientRect();
-                                    if (rect.width > 0 && rect.height > 0) {
-                                        r.has_login_button = true;
-                                        r.login_btn_text = text;
-                                        break;
-                                    }
+                                if (text === kw && isVisible(btn)) {
+                                    r.has_login_button = true;
+                                    r.login_btn_text = text;
+                                    break;
                                 }
                             }
                             if (r.has_login_button) break;
                         }
                     }
                 }
-                // 策略3：aria-label 搜索
+                // 策略3：class 包含 login-btn 的可见按钮
+                if (!r.has_login_button) {
+                    const btns = document.querySelectorAll(
+                        'button[class*="login"], a[class*="login"], [class*="login-btn"], [class*="loginBtn"]'
+                    );
+                    for (const btn of btns) {
+                        if (isVisible(btn)) {
+                            r.has_login_button = true;
+                            r.login_btn_text = 'class:' + (btn.className || '').toString().slice(0, 30);
+                            break;
+                        }
+                    }
+                }
+                // 策略4：aria-label
                 if (!r.has_login_button) {
                     const btns = document.querySelectorAll(
                         'button[aria-label], a[aria-label], div[role="button"][aria-label]'
@@ -2560,8 +2599,7 @@ class ChromeManager:
                     for (const btn of btns) {
                         const label = (btn.getAttribute('aria-label') || '').trim();
                         if (label === '登录' || label === '登陆' || label === 'Sign in' || label === 'Login') {
-                            const rect = btn.getBoundingClientRect();
-                            if (rect.width > 0 && rect.height > 0) {
+                            if (isVisible(btn)) {
                                 r.has_login_button = true;
                                 r.login_btn_text = 'aria:' + label;
                                 break;
@@ -2570,32 +2608,13 @@ class ChromeManager:
                     }
                 }
 
-                // 如果检测到登录按钮 → 直接返回，不检查正面指标
-                if (r.has_login_button) return r;
-
-                // === 肯定指标：用户元素检测（仅用配置的选择器）===
-                if (config.logged_in_selector) {
-                    const sels = config.logged_in_selector.split(',').map(s => s.trim());
-                    for (const sel of sels) {
-                        try {
-                            const el = document.querySelector(sel);
-                            if (el) {
-                                const rect = el.getBoundingClientRect();
-                                if (rect.width > 0 && rect.height > 0) {
-                                    r.has_user_element = true;
-                                    break;
-                                }
-                            }
-                        } catch(e) {}
-                    }
-                }
-
-                // === 肯定指标：localStorage token 检测（仅用配置的 key）===
+                // === 肯定指标：localStorage token 检测 ===
                 if (config.auth_storage_keys && config.auth_storage_keys.length > 0) {
                     for (const key of config.auth_storage_keys) {
                         const val = localStorage.getItem(key);
                         if (val && val.length > 10) {
                             r.has_auth_token = true;
+                            r.auth_key = key;
                             break;
                         }
                     }
@@ -2611,14 +2630,19 @@ class ChromeManager:
 
         # === 判定逻辑 ===
         has_login_button = result.get("has_login_button", False)
+        has_auth_token = result.get("has_auth_token", False)
 
-        # 1. 否定指标优先：有登录按钮 → 未登录
+        # 1. 有登录按钮 → 未登录（否定优先）
         if has_login_button:
             btn_text = result.get("login_btn_text", "")
             return "not_logged_in", f"检测到登录按钮（{btn_text}），请先登录"
 
-        # 2. 无登录按钮 → 已登录（AI 网站未登录必定显示登录按钮）
-        return "logged_in", "已登录"
+        # 2. 无登录按钮 + 有 token → 已登录
+        if has_auth_token:
+            return "logged_in", "已登录"
+
+        # 3. 无登录按钮 + 无 token → 未登录（保守，防止误判）
+        return "not_logged_in", "未检测到登录状态，请先登录"
 
     # ------------------------------------------------------------------
     # 统一状态检测：对话框 + 登录（思考模式不作为变绿标准）
