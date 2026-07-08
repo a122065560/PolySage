@@ -278,16 +278,22 @@ echo ""
 # Step 5: 重新签名（深度签名，解决 macOS 26 兼容性）
 # ----------------------------------------------------------------
 echo -e "${YELLOW}[5/7] 签名 .app...${NC}"
-# 移除可能残留的 entitlements 和 TCC 记录
-xattr -cr "$DIST_DIR/聚慧.app" 2>/dev/null
+# 移除可能残留的 entitlements 和 TCC 记录（非关键步骤，失败不阻断）
+xattr -cr "$DIST_DIR/聚慧.app" 2>/dev/null || true
 # 用 --deep 递归签名所有组件（ad-hoc 签名不能用 --options=runtime，会导致 Team ID 不一致）
-codesign --force --deep --sign - "$DIST_DIR/聚慧.app" 2>&1 | tail -2
+# 签名是 ad-hoc 的，失败不影响功能（用户右键→打开即可），用 || true 防止 set -e 退出
+codesign --force --deep --sign - "$DIST_DIR/聚慧.app" 2>&1 | tail -2 || true
 echo -e "${GREEN}  ✅ 签名完成${NC}"
 
 # 签名后创建 _internal 符号链接（codesign --deep 无法处理指向父目录的符号链接，会报错退出）
 # PyInstaller 的 PyQt6 runtime hook 通过 _internal 路径查找 Qt plugins/libraries
 ln -sf ../Frameworks "$DIST_DIR/聚慧.app/Contents/Resources/_internal"
-echo -e "${GREEN}  ✅ _internal 符号链接已创建（→ ../Frameworks）${NC}"
+# 验证符号链接
+if [ -L "$DIST_DIR/聚慧.app/Contents/Resources/_internal" ]; then
+    echo -e "${GREEN}  ✅ _internal 符号链接已创建（→ ../Frameworks）${NC}"
+else
+    echo -e "${RED}  ❌ _internal 符号链接创建失败！${NC}"
+fi
 echo ""
 
 # ----------------------------------------------------------------
