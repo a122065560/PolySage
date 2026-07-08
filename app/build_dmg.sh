@@ -171,9 +171,15 @@ else
     echo -e "${YELLOW}  ⚠️  Playwright driver 未找到${NC}"
 fi
 
-# 同步 _internal 到 .app
+# 清理因只保留3个Qt6框架而产生的断裂符号链接
+# PyInstaller 在 _internal/ 下创建了指向所有Qt6框架的符号链接（如 QtWebSockets -> PyQt6/Qt6/lib/QtWebSockets.framework/...）
+# 删除 Qt6/lib 后只保留3个框架，其余符号链接已断裂，需清理
+find "$DIST_DIR/PolySage/_internal" -type l ! -exec test -e {} \; -delete 2>/dev/null || true
+echo -e "${GREEN}  ✅ 已清理断裂符号链接${NC}"
+
+# 同步 _internal 到 .app（用 -R 保留符号链接，不跟随）
 rm -rf "$DIST_DIR/PolySage.app/Contents/Resources/_internal"
-cp -r "$DIST_DIR/PolySage/_internal" "$DIST_DIR/PolySage.app/Contents/Resources/_internal"
+cp -R "$DIST_DIR/PolySage/_internal" "$DIST_DIR/PolySage.app/Contents/Resources/_internal"
 
 # 更新 Info.plist
 cp "$SCRIPT_DIR/Info.plist" "$DIST_DIR/PolySage.app/Contents/Info.plist"
@@ -257,7 +263,7 @@ DMG_STAGING="$DIST_DIR/dmg_staging"
 rm -rf "$DMG_STAGING" "$DMG_PATH"
 mkdir -p "$DMG_STAGING"
 
-cp -r "$DIST_DIR/PolySage.app" "$DMG_STAGING/"
+cp -R "$DIST_DIR/PolySage.app" "$DMG_STAGING/"
 ln -s /Applications "$DMG_STAGING/Applications"
 
 echo -e "${BLUE}  创建磁盘镜像（单步模式，无需挂载）...${NC}"
