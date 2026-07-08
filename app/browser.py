@@ -332,28 +332,28 @@ class ChromeManager:
                 try:
                     subprocess.run(
                         ["launchctl", "unload", self._LAUNCH_AGENT_PLIST],
-                        timeout=5, capture_output=True
+                        timeout=3, capture_output=True
                     )
                     log_info("Chrome 已通过 launchctl unload 停止")
                 except Exception as e:
                     log_warning(f"launchctl unload 失败: {e}")
 
-            # 等待端口释放
-            deadline = time.time() + 3
+            # 等待端口释放（最多 2 秒）
+            deadline = time.time() + 2
             while time.time() < deadline:
                 if not is_port_in_use(port):
                     break
-                time.sleep(0.5)
+                time.sleep(0.3)
 
             # 后备：pkill
             if is_port_in_use(port):
                 try:
                     subprocess.run(
                         ["pkill", "-f", f"remote-debugging-port={port}"],
-                        timeout=5, capture_output=True
+                        timeout=3, capture_output=True
                     )
                     log_info(f"Chrome 已通过 pkill 强制关闭 (port={port})")
-                    time.sleep(1)
+                    time.sleep(0.5)
                 except Exception as e:
                     log_warning(f"pkill 关闭 Chrome 失败: {e}")
         elif sys.platform == 'win32':

@@ -570,9 +570,9 @@ class WorkerThread(QThread):
                 except Exception as e:
                     log_warning(f"销毁 AIWorker {name} 失败: {e}")
 
-            # 3. 关闭 Chrome
+            # 3. 关闭 Chrome（在线程池中执行，不阻塞事件循环）
             if self._chrome_mgr:
-                self._chrome_mgr.stop_chrome()
+                await asyncio.to_thread(self._chrome_mgr.stop_chrome)
 
             # 4. 通知UI
             self.chrome_stopped_signal.emit()
