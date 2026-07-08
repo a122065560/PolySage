@@ -2454,34 +2454,22 @@ class ChromeManager:
     # ------------------------------------------------------------------
 
     async def check_login_status(self, page: Page, ai_config: dict) -> tuple:
-        """多策略组合登录检测（各AI可独立配置检测方式）。
+        """登录检测：以"登录按钮是否存在"为核心判断依据。
 
-        检测策略（全部在 JS 中执行，一次 evaluate 完成）：
-        1. URL 检测：URL 包含 login/auth → 未登录
-        2. 登录按钮检测：页面上存在"登录"/"注册"按钮 → 未登录（否定指标）
-        3. 用户元素检测：页面上存在用户头像/设置/退出等元素 → 已登录（肯定指标）
-        4. localStorage 检测：存在 auth token 类的 key → 已登录（肯定指标）
+        核心逻辑：AI 网站未登录时必定显示"登录"按钮。
+        1. 有登录按钮 → 未登录（最可靠，优先级最高，覆盖一切）
+        2. 无登录按钮 + 有用户元素/token → 已登录（确认）
+        3. 无登录按钮 + 无用户元素 → 已登录（推测：无登录按钮=已登录）
 
-        判定逻辑：
-        - 有肯定指标（用户元素 或 localStorage token）→ 已登录
-        - 有否定指标（登录按钮）→ 未登录
-        - 既无肯定也无否定 → 未登录（保守策略）
-
-        每个 AI 可在 config.selectors 中配置：
-        - logged_in_selector: 已登录时才存在的元素（如用户头像）
-        - logged_out_selector: 未登录时才存在的元素（如登录按钮）
-        - auth_storage_keys: localStorage 中认证 token 的 key 名称列表
-
-        Args:
-            page: Playwright Page
-            ai_config: AI 平台配置
+        每个 AI 可配置：
+        - logged_out_selector: 未登录时才存在的元素选择器
+        - logged_in_selector: 已登录时才存在的元素选择器
+        - auth_storage_keys: localStorage 中认证 token 的 key 列表
 
         Returns:
-            tuple: (status: str, message: str)
-            status ∈ {"logged_in", "not_logged_in"}
+            tuple: (status, message)
         """
         selectors = ai_config.get("selectors", {})
-        ai_name = ai_config.get("name", "未知")
 
         try:
             current_url = page.url
@@ -2492,15 +2480,21 @@ class ChromeManager:
         if any(kw in current_url.lower() for kw in [
             "login", "auth", "signin", "sign-in", "sign_in", "signup", "sign-up", "sign_up"
         ]):
-            return "not_logged_in", f"当前页面为登录页，请先登录"
+            return "not_logged_in", "当前页面为登录页，请先登录"
 
-        # 2. 输入框检测（快速判断页面是否加载完）
+        # 2. 输入框检测
         input_selector = selectors.get("input_textarea", "textarea")
         input_el = await self._try_locate(page, input_selector, state="visible", timeout=3000)
         if input_el is None:
             return "not_logged_in", "无对话框（页面未加载或需登录）"
 
-        # 3. JS 多策略检测
+        # 3. 等待 DOM 稳定
+        try:
+            await page.wait_for_load_state("domcontentloaded", timeout=1500)
+        except Exception:
+            pass
+
+        # 4. JS 检测（一次 evaluate 完成）
         logged_in_selector = selectors.get("logged_in_selector", "")
         logged_out_selector = selectors.get("logged_out_selector", "")
         auth_storage_keys = selectors.get("auth_storage_keys", [])
@@ -2508,39 +2502,44 @@ class ChromeManager:
         result = await page.evaluate("""
             (config) => {
                 const r = {
-                    has_user_element: false,
                     has_login_button: false,
-                    has_auth_token: false,
                     login_btn_text: '',
-                    user_element_desc: '',
-                    auth_key_found: ''
+                    has_user_element: false,
+                    has_auth_token: false,
+                    debug: {}
                 };
 
-                // 策略A：检测登录/注册按钮（否定指标）
-                // 先用配置的选择器，再用通用文本搜索
+                // === 否定指标：登录按钮检测（最高优先级）===
+                // 策略1：配置的选择器
                 if (config.logged_out_selector) {
-                    try {
-                        const el = document.querySelector(config.logged_out_selector);
-                        if (el) {
-                            const rect = el.getBoundingClientRect();
-                            if (rect.width > 0 && rect.height > 0) {
-                                r.has_login_button = true;
-                                r.login_btn_text = (el.textContent || '').trim().slice(0, 20);
+                    const sels = config.logged_out_selector.split(',').map(s => s.trim());
+                    for (const sel of sels) {
+                        try {
+                            const el = document.querySelector(sel);
+                            if (el) {
+                                const rect = el.getBoundingClientRect();
+                                if (rect.width > 0 && rect.height > 0) {
+                                    r.has_login_button = true;
+                                    r.login_btn_text = (el.textContent || '').trim().slice(0, 20);
+                                    break;
+                                }
                             }
-                        }
-                    } catch(e) {}
+                        } catch(e) {}
+                    }
                 }
-                // 通用文本搜索：查找可见的"登录"/"注册"/"Sign in"按钮
+                // 策略2：文本搜索（精确匹配，避免误判）
                 if (!r.has_login_button) {
                     const btns = document.querySelectorAll(
-                        'button, a, span[role="button"], div[role="button"], a[class*="login"], button[class*="login"]'
+                        'button, a, span[role="button"], div[role="button"]'
                     );
-                    const loginKeywords = ['登录', '登陆', '注册', 'Sign in', 'Sign up', 'Log in', '登入'];
+                    // 只匹配精确文本，不模糊匹配（避免"登录了解"等误判）
+                    const loginTexts = ['登录', '登陆', '登入', '注册', '立即登录',
+                                       'Sign in', 'Sign up', 'Log in', 'Login'];
                     for (const btn of btns) {
                         const text = (btn.textContent || '').trim();
-                        if (text.length > 0 && text.length < 20) {
-                            for (const kw of loginKeywords) {
-                                if (text === kw || text.startsWith(kw)) {
+                        if (text.length > 0 && text.length <= 10) {
+                            for (const kw of loginTexts) {
+                                if (text === kw || text === kw + ' ' || text === ' ' + kw) {
                                     const rect = btn.getBoundingClientRect();
                                     if (rect.width > 0 && rect.height > 0) {
                                         r.has_login_button = true;
@@ -2553,9 +2552,28 @@ class ChromeManager:
                         }
                     }
                 }
+                // 策略3：aria-label 搜索
+                if (!r.has_login_button) {
+                    const btns = document.querySelectorAll(
+                        'button[aria-label], a[aria-label], div[role="button"][aria-label]'
+                    );
+                    for (const btn of btns) {
+                        const label = (btn.getAttribute('aria-label') || '').trim();
+                        if (label === '登录' || label === '登陆' || label === 'Sign in' || label === 'Login') {
+                            const rect = btn.getBoundingClientRect();
+                            if (rect.width > 0 && rect.height > 0) {
+                                r.has_login_button = true;
+                                r.login_btn_text = 'aria:' + label;
+                                break;
+                            }
+                        }
+                    }
+                }
 
-                // 策略B：检测用户元素（肯定指标）
-                // 用配置的选择器查找
+                // 如果检测到登录按钮 → 直接返回，不检查正面指标
+                if (r.has_login_button) return r;
+
+                // === 肯定指标：用户元素检测（仅用配置的选择器）===
                 if (config.logged_in_selector) {
                     const sels = config.logged_in_selector.split(',').map(s => s.trim());
                     for (const sel of sels) {
@@ -2565,66 +2583,20 @@ class ChromeManager:
                                 const rect = el.getBoundingClientRect();
                                 if (rect.width > 0 && rect.height > 0) {
                                     r.has_user_element = true;
-                                    r.user_element_desc = sel;
                                     break;
                                 }
                             }
                         } catch(e) {}
                     }
                 }
-                // 通用搜索：查找用户菜单/设置/退出等元素
-                if (!r.has_user_element) {
-                    const userKeywords = ['退出', '退出登录', '退出账号', '注销', '设置',
-                                          '个人中心', '我的', 'Log out', 'Logout', 'Sign out',
-                                          'Settings', 'Account'];
-                    const allElements = document.querySelectorAll('button, a, div[role="button"], span, li');
-                    for (const el of allElements) {
-                        const text = (el.textContent || '').trim();
-                        if (text.length > 0 && text.length < 15) {
-                            for (const kw of userKeywords) {
-                                if (text === kw || text.includes(kw)) {
-                                    const rect = el.getBoundingClientRect();
-                                    if (rect.width > 0 && rect.height > 0) {
-                                        r.has_user_element = true;
-                                        r.user_element_desc = 'text:' + text;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (r.has_user_element) break;
-                        }
-                    }
-                }
 
-                // 策略C：检测 localStorage 中的认证 token
+                // === 肯定指标：localStorage token 检测（仅用配置的 key）===
                 if (config.auth_storage_keys && config.auth_storage_keys.length > 0) {
                     for (const key of config.auth_storage_keys) {
                         const val = localStorage.getItem(key);
                         if (val && val.length > 10) {
                             r.has_auth_token = true;
-                            r.auth_key_found = key;
                             break;
-                        }
-                    }
-                }
-                // 通用 localStorage 检测：查找包含 token/auth/user/jwt/session 的 key
-                if (!r.has_auth_token) {
-                    const tokenKeywords = ['token', 'auth', 'user', 'jwt', 'session', 'passport'];
-                    for (let i = 0; i < localStorage.length; i++) {
-                        const key = localStorage.key(i);
-                        if (key) {
-                            const lowerKey = key.toLowerCase();
-                            for (const kw of tokenKeywords) {
-                                if (lowerKey.includes(kw)) {
-                                    const val = localStorage.getItem(key);
-                                    if (val && val.length > 20) {
-                                        r.has_auth_token = true;
-                                        r.auth_key_found = key;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (r.has_auth_token) break;
                         }
                     }
                 }
@@ -2637,20 +2609,16 @@ class ChromeManager:
             "auth_storage_keys": auth_storage_keys,
         })
 
-        has_positive = result.get("has_user_element", False) or result.get("has_auth_token", False)
-        has_negative = result.get("has_login_button", False)
+        # === 判定逻辑 ===
+        has_login_button = result.get("has_login_button", False)
 
-        # 判定逻辑
-        if has_positive:
-            # 有肯定指标 → 已登录（即使同时有登录按钮也以肯定指标为准）
-            return "logged_in", "已登录"
-        elif has_negative:
-            # 无肯定指标 + 有否定指标 → 未登录
+        # 1. 否定指标优先：有登录按钮 → 未登录
+        if has_login_button:
             btn_text = result.get("login_btn_text", "")
             return "not_logged_in", f"检测到登录按钮（{btn_text}），请先登录"
-        else:
-            # 既无肯定也无否定 → 保守判定未登录
-            return "not_logged_in", "未检测到登录状态，可能未登录"
+
+        # 2. 无登录按钮 → 已登录（AI 网站未登录必定显示登录按钮）
+        return "logged_in", "已登录"
 
     # ------------------------------------------------------------------
     # 统一状态检测：对话框 + 登录（思考模式不作为变绿标准）
