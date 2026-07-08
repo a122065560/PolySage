@@ -21,7 +21,7 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 # 默认配置版本号（每次修改 DEFAULT_CONFIG 中的选择器/思考模式时递增）
 # 用于判断用户配置是否需要同步更新默认平台的配置
-DEFAULT_CONFIG_VERSION = 2
+DEFAULT_CONFIG_VERSION = 3
 
 # 默认配置
 DEFAULT_CONFIG = {
@@ -60,8 +60,9 @@ DEFAULT_CONFIG = {
                 "stop_button": "div[class*='answer'] div[class*='stop']",
                 "response_container": "div.message-content",
                 "last_response": "div.message-content:not([class*='think']):last-of-type",
-                "login_indicator": "div[class*='avatar']",
-                "login_button": "button:has-text('登录')",
+                "logged_in_selector": "div[class*='avatar'], img[class*='avatar']",
+                "logged_out_selector": "button:has-text('登录'), a:has-text('登录')",
+                "auth_storage_keys": ["userToken", "token", "userInfo"],
             },
             "thinking_mode": {
                 # DeepSeek flash 模式已足够强大，不需要思考模式
@@ -78,8 +79,9 @@ DEFAULT_CONFIG = {
                 "stop_button": "div[class*='stop'], button:has-text('停止')",
                 "response_container": "div[class*='message']",
                 "last_response": "div[class*='markdown']:not([class*='think']):last-of-type",
-                "login_indicator": "div[class*='avatar']",
-                "login_button": "button:has-text('登录')",
+                "logged_in_selector": "div[class*='avatar'], img[class*='avatar']",
+                "logged_out_selector": "button:has-text('登录'), a:has-text('登录')",
+                "auth_storage_keys": ["chatglm_token", "token", "user"],
             },
             "thinking_mode": {
                 "enabled": True,
@@ -109,8 +111,9 @@ DEFAULT_CONFIG = {
                 "stop_button": "button[class*='stop'], button[aria-label='停止']",
                 "response_container": "div[class*='message'], div[class*='conversation']",
                 "last_response": "div[class*='markdown']:not([class*='think']):not([class*='reasoning']):last-of-type, div[class*='bubble']:not([class*='think']):last-of-type",
-                "login_indicator": "div[class*='avatar'], img[class*='avatar'], div[class*='user-info']",
-                "login_button": "button[class*='black-button']:has-text('登录'), button:has-text('登录')",
+                "logged_in_selector": "div[class*='avatar'], img[class*='avatar'], div[class*='user-info']",
+                "logged_out_selector": "button[class*='black-button']:has-text('登录'), button:has-text('登录')",
+                "auth_storage_keys": ["token", "userToken", "userInfo", "login_aliyunid_token"],
             },
             "thinking_mode": {
                 "enabled": True,
@@ -138,8 +141,9 @@ DEFAULT_CONFIG = {
                 "stop_button": "button:has-text('停止'), div[class*='stop'], button[class*='stop']",
                 "response_container": "div[class*='message'], div[class*='conversation'], div[class*='chat'], div[class*='bubble'], div[class*='reply'], div[class*='answer'], div[class*='response'], div[class*='content']:not([class*='input'])",
                 "last_response": "div[class*='markdown']:not([class*='think']):not([class*='reasoning']):last-of-type, div[class*='message-content']:not([class*='think']):last-of-type, div[class*='bubble']:not([class*='think']):last-of-type, div[class*='reply']:not([class*='think']):last-of-type, div[class*='answer']:not([class*='think']):last-of-type, div.semi-modal-content, div[class*='prose']:not([class*='think']):last-of-type",
-                "login_indicator": "div[class*='avatar'], img[class*='avatar']",
-                "login_button": "button:has-text('登录'), a:has-text('登录')",
+                "logged_in_selector": "div[class*='avatar'], img[class*='avatar']",
+                "logged_out_selector": "button:has-text('登录'), a:has-text('登录')",
+                "auth_storage_keys": ["token", "userToken", "userInfo", "sessionToken"],
             },
             "thinking_mode": {
                 "enabled": True,
@@ -167,8 +171,9 @@ DEFAULT_CONFIG = {
                 "stop_button": "button:has-text('停止'), div[class*='stop']",
                 "response_container": "div[class*='message'], div[class*='conversation'], section[class*='chat']",
                 "last_response": "div[class*='markdown']:not([class*='think']):not([class*='reasoning']):last-of-type, div[class*='message-content']:not([class*='think']):last-of-type, div[class*='bubble']:not([class*='think']):last-of-type",
-                "login_indicator": "div[class*='avatar'], img[class*='avatar']",
-                "login_button": "button:has-text('登录'), a:has-text('登录')",
+                "logged_in_selector": "div[class*='avatar'], img[class*='avatar']",
+                "logged_out_selector": "button:has-text('登录'), a:has-text('登录')",
+                "auth_storage_keys": ["token", "userToken", "userInfo", "access_token"],
             },
             "thinking_mode": {
                 "enabled": True,
