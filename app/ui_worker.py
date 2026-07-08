@@ -142,6 +142,7 @@ class AIWorker:
                 self.chrome_mgr.check_ai_ready(self.page, self.config),
                 timeout=15
             )
+            log_info(f"[AIWorker:{self.name}] 检测结果: {status} ({reason})")
 
             # 2. 如果已就绪（绿色），后台尝试启用思考模式（不影响绿色状态）
             if status == "green":

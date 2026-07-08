@@ -2659,6 +2659,12 @@ class ChromeManager:
         has_auth_token = result.get("has_auth_token", False)
         has_user_element = result.get("has_user_element", False)
 
+        # 调试日志：输出检测结果
+        ai_name = ai_config.get("name", "未知")
+        log_info(f"[登录检测] {ai_name}: login_button={has_login_button}({result.get('login_btn_text','')}), "
+                 f"token={has_auth_token}({result.get('auth_key','')}), "
+                 f"user_element={has_user_element}")
+
         # 1. 有登录按钮 → 未登录（否定优先，覆盖一切）
         if has_login_button:
             btn_text = result.get("login_btn_text", "")
