@@ -58,13 +58,12 @@ echo ""
 echo -e "${YELLOW}[2/7] 清理旧产物...${NC}"
 rm -rf "$BUILD_DIR" "$DIST_DIR"
 rm -rf "$SCRIPT_DIR/__pycache__"
-rm -f "$SCRIPT_DIR/PolySage.spec"
 find "$SCRIPT_DIR" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 echo -e "${GREEN}  ✅ 已清理${NC}"
 echo ""
 
 # ----------------------------------------------------------------
-# Step 3: PyInstaller 打包（排除 Qt6 framework 避免符号链接冲突）
+# Step 3: PyInstaller 打包（使用 PolySage.spec）
 # ----------------------------------------------------------------
 echo -e "${YELLOW}[3/7] PyInstaller 打包中（ARM64）...${NC}"
 echo -e "${BLUE}  这可能需要几分钟...${NC}"
@@ -76,47 +75,7 @@ python3 -m PyInstaller \
     --noconfirm \
     --clean \
     --target-arch arm64 \
-    --windowed \
-    --osx-bundle-identifier com.polysage.app \
-    --name "PolySage" \
-    --icon AppIcon.icns \
-    --add-data "logo_ui.png:." \
-    --add-data "logo_ui@2x.png:." \
-    main.py \
-    ui_main_window.py \
-    ui_widgets.py \
-    ui_worker.py \
-    ui_flowlayout.py \
-    browser.py \
-    core.py \
-    config_manager.py \
-    utils.py \
-    logger.py \
-    --hidden-import PyQt6 \
-    --hidden-import PyQt6.QtCore \
-    --hidden-import PyQt6.QtGui \
-    --hidden-import PyQt6.QtWidgets \
-    --hidden-import PyQt6.sip \
-    --hidden-import qasync \
-    --hidden-import playwright \
-    --hidden-import playwright.async_api \
-    --hidden-import playwright._impl \
-    --hidden-import openai \
-    --collect-submodules PyQt6 \
-    --collect-binaries PyQt6 \
-    --exclude-module PyQt6.Qt6 \
-    --collect-all playwright \
-    --collect-data qasync \
-    --copy-metadata openai \
-    --copy-metadata qasync \
-    --exclude-module tkinter \
-    --exclude-module matplotlib \
-    --exclude-module numpy \
-    --exclude-module pandas \
-    --exclude-module PIL \
-    --exclude-module PyQt5 \
-    --exclude-module PySide6 \
-    2>&1 | tail -10
+    PolySage.spec 2>&1 | tail -10
 
 if [ ! -d "$DIST_DIR/PolySage.app" ]; then
     echo -e "${RED}❌ 打包失败${NC}"
@@ -242,13 +201,17 @@ echo -e "${GREEN}  ✅ 资源已同步${NC}"
 echo ""
 
 # ----------------------------------------------------------------
-# Step 5: 重新签名（ad-hoc 签名，不使用 --deep 避免 TCC 权限提示）
+# Step 5: 重新签名（深度签名 + Hardened Runtime，解决 macOS 26 兼容性）
 # ----------------------------------------------------------------
 echo -e "${YELLOW}[5/7] 签名 .app...${NC}"
 # 移除可能残留的 entitlements 和 TCC 记录
 xattr -cr "$DIST_DIR/PolySage.app" 2>/dev/null
-# 只签主可执行文件，不递归签名嵌入的库（避免触发权限请求）
-codesign --force --deep --sign - "$DIST_DIR/PolySage.app" 2>&1 | tail -2
+# 先签名每个 Qt6 framework
+for fw in "$DIST_DIR/PolySage.app/Contents/Resources/_internal/PyQt6/Qt6/lib/"*.framework; do
+    codesign --force --sign - "$fw" 2>/dev/null
+done
+# 再签名主 app（--options=runtime 启用 Hardened Runtime）
+codesign --force --sign - --options=runtime "$DIST_DIR/PolySage.app" 2>&1 | tail -2
 echo -e "${GREEN}  ✅ 签名完成${NC}"
 echo ""
 
