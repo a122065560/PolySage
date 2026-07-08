@@ -139,8 +139,10 @@ print(qt6_dir)
 " 2>&1) || { echo "  ⚠️ python3 获取 QT6_LIB 失败: $QT6_LIB"; QT6_LIB=""; }
 
 if [ -n "$QT6_LIB" ] && [ -d "$QT6_LIB" ]; then
-    mkdir -p "$DIST_DIR/PolySage/_internal/PyQt6/Qt6/lib"
     echo "  QT6_LIB=$QT6_LIB"
+    # 清理 PyInstaller --collect-binaries 已创建的不完整 Qt6/lib，避免 cp 冲突
+    rm -rf "$DIST_DIR/PolySage/_internal/PyQt6/Qt6/lib"
+    mkdir -p "$DIST_DIR/PolySage/_internal/PyQt6/Qt6/lib"
     # 只复制实际使用的3个Qt6框架（而非全部85个），节省约400MB
     for fw in QtCore QtGui QtWidgets; do
         if [ -d "$QT6_LIB/$fw.framework" ]; then
