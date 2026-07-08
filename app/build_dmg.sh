@@ -131,22 +131,28 @@ echo ""
 echo -e "${YELLOW}[4/7] 嵌入 Qt6 和 Playwright driver...${NC}"
 
 # 找到 PyQt6 的 Qt6 库路径
+# 注意：用 2>&1 捕获错误信息，并用 || 防止 set -e 在 python3 失败时退出
 QT6_LIB=$(python3 -c "
 import PyQt6, os
 qt6_dir = os.path.join(os.path.dirname(PyQt6.__file__), 'Qt6', 'lib')
 print(qt6_dir)
-" 2>/dev/null)
+" 2>&1) || { echo "  ⚠️ python3 获取 QT6_LIB 失败: $QT6_LIB"; QT6_LIB=""; }
 
 if [ -n "$QT6_LIB" ] && [ -d "$QT6_LIB" ]; then
     mkdir -p "$DIST_DIR/PolySage/_internal/PyQt6/Qt6/lib"
+    echo "  QT6_LIB=$QT6_LIB"
     # 只复制实际使用的3个Qt6框架（而非全部85个），节省约400MB
     for fw in QtCore QtGui QtWidgets; do
-        cp -R "$QT6_LIB/"*"$fw"* "$DIST_DIR/PolySage/_internal/PyQt6/Qt6/lib/" 2>/dev/null
-        echo "  复制 Qt6/$fw framework"
+        if [ -d "$QT6_LIB/$fw.framework" ]; then
+            cp -R "$QT6_LIB/$fw.framework" "$DIST_DIR/PolySage/_internal/PyQt6/Qt6/lib/"
+            echo "  复制 Qt6/$fw framework ✓"
+        else
+            echo "  ⚠️ 未找到 $QT6_LIB/$fw.framework"
+        fi
     done
     echo -e "${GREEN}  ✅ Qt6 framework 已嵌入（仅 QtCore/QtGui/QtWidgets）${NC}"
 else
-    echo -e "${YELLOW}  ⚠️  Qt6 库未找到${NC}"
+    echo -e "${YELLOW}  ⚠️  Qt6 库未找到 (QT6_LIB='$QT6_LIB')${NC}"
 fi
 
 # 找到 Playwright driver
