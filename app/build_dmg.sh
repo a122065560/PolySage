@@ -138,9 +138,13 @@ print(qt6_dir)
 " 2>/dev/null)
 
 if [ -n "$QT6_LIB" ] && [ -d "$QT6_LIB" ]; then
-    mkdir -p "$DIST_DIR/PolySage/_internal/PyQt6/Qt6"
-    cp -r "$QT6_LIB" "$DIST_DIR/PolySage/_internal/PyQt6/Qt6/lib"
-    echo -e "${GREEN}  ✅ Qt6 framework 已嵌入${NC}"
+    mkdir -p "$DIST_DIR/PolySage/_internal/PyQt6/Qt6/lib"
+    # 只复制实际使用的3个Qt6框架（而非全部85个），节省约400MB
+    for fw in QtCore QtGui QtWidgets; do
+        cp -R "$QT6_LIB/"*"$fw"* "$DIST_DIR/PolySage/_internal/PyQt6/Qt6/lib/" 2>/dev/null
+        echo "  复制 Qt6/$fw framework"
+    done
+    echo -e "${GREEN}  ✅ Qt6 framework 已嵌入（仅 QtCore/QtGui/QtWidgets）${NC}"
 else
     echo -e "${YELLOW}  ⚠️  Qt6 库未找到${NC}"
 fi
