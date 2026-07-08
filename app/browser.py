@@ -524,7 +524,7 @@ class ChromeManager:
             if sys.platform == 'darwin':
                 # macOS: osascript
                 proc = await asyncio.create_subprocess_exec(
-                    "osascript", "-e", 'tell application "聚慧 PolySage" to activate',
+                    "osascript", "-e", 'tell application "聚慧" to activate',
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.DEVNULL,
                 )

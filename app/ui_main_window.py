@@ -1278,7 +1278,7 @@ class MainWindow(QMainWindow):
         self._arbitrator = self.config_mgr.config.get("discussion", {}).get("arbitrator", "智谱清言")
         # 先创建 chrome_mgr 占位（_build_ui 中 HostedModeTab 需要引用）
         self.chrome_mgr = ChromeManager(self.config_mgr.config)
-        self.setWindowTitle("聚慧 PolySage")
+        self.setWindowTitle("聚慧")
         # 设置窗口图标
         _icon_path = resource_path("logo_ui.png")
         if os.path.exists(_icon_path):

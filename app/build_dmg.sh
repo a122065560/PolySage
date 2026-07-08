@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# PolySage 一键打包脚本
+# 聚慧 一键打包脚本
 # 生成 macOS ARM64 .app 和 .dmg 安装包
 # ============================================================
 set -e
@@ -23,7 +23,7 @@ cd "$SCRIPT_DIR"
 
 DIST_DIR="$SCRIPT_DIR/dist"
 BUILD_DIR="$SCRIPT_DIR/build"
-DMG_NAME="${DMG_NAME:-PolySage-1.0.0-arm64.dmg}"
+DMG_NAME="${DMG_NAME:-聚慧-1.0.0-arm64.dmg}"
 
 # ----------------------------------------------------------------
 # Step 1: 检查依赖
@@ -80,7 +80,7 @@ python3 -m PyInstaller \
     --target-arch arm64 \
     --windowed \
     --osx-bundle-identifier com.polysage.app \
-    --name "PolySage" \
+    --name "聚慧" \
     --icon AppIcon.icns \
     --add-data "logo_ui.png:." \
     --add-data "logo_ui@2x.png:." \
@@ -165,7 +165,7 @@ python3 -m PyInstaller \
     --exclude-module PyQt6.QtXml \
     2>&1 | tail -10
 
-if [ ! -d "$DIST_DIR/PolySage.app" ]; then
+if [ ! -d "$DIST_DIR/聚慧.app" ]; then
     echo -e "${RED}❌ 打包失败${NC}"
     exit 1
 fi
@@ -188,12 +188,12 @@ print(qt6_dir)
 if [ -n "$QT6_LIB" ] && [ -d "$QT6_LIB" ]; then
     echo "  QT6_LIB=$QT6_LIB"
     # 清理 PyInstaller --collect-binaries 已创建的不完整 Qt6/lib，避免 cp 冲突
-    rm -rf "$DIST_DIR/PolySage/_internal/PyQt6/Qt6/lib"
-    mkdir -p "$DIST_DIR/PolySage/_internal/PyQt6/Qt6/lib"
+    rm -rf "$DIST_DIR/聚慧/_internal/PyQt6/Qt6/lib"
+    mkdir -p "$DIST_DIR/聚慧/_internal/PyQt6/Qt6/lib"
     # 只复制实际使用的4个Qt6框架（而非全部85个），节省约400MB
     for fw in QtCore QtGui QtWidgets QtDBus; do
         if [ -d "$QT6_LIB/$fw.framework" ]; then
-            cp -R "$QT6_LIB/$fw.framework" "$DIST_DIR/PolySage/_internal/PyQt6/Qt6/lib/"
+            cp -R "$QT6_LIB/$fw.framework" "$DIST_DIR/聚慧/_internal/PyQt6/Qt6/lib/"
             echo "  复制 Qt6/$fw framework ✓"
         else
             echo "  ⚠️ 未找到 $QT6_LIB/$fw.framework"
@@ -211,8 +211,8 @@ print(os.path.join(os.path.dirname(playwright.__file__), 'driver'))
 " 2>/dev/null)
 
 if [ -n "$PW_DRIVER" ] && [ -d "$PW_DRIVER" ]; then
-    mkdir -p "$DIST_DIR/PolySage/_internal/playwright"
-    cp -r "$PW_DRIVER" "$DIST_DIR/PolySage/_internal/playwright/driver"
+    mkdir -p "$DIST_DIR/聚慧/_internal/playwright"
+    cp -r "$PW_DRIVER" "$DIST_DIR/聚慧/_internal/playwright/driver"
     echo -e "${GREEN}  ✅ Playwright driver 已嵌入${NC}"
 else
     echo -e "${YELLOW}  ⚠️  Playwright driver 未找到${NC}"
@@ -221,19 +221,19 @@ fi
 # 清理因只保留3个Qt6框架而产生的断裂符号链接
 # PyInstaller 在 _internal/ 下创建了指向所有Qt6框架的符号链接（如 QtWebSockets -> PyQt6/Qt6/lib/QtWebSockets.framework/...）
 # 删除 Qt6/lib 后只保留3个框架，其余符号链接已断裂，需清理
-find "$DIST_DIR/PolySage/_internal" -type l ! -exec test -e {} \; -delete 2>/dev/null || true
+find "$DIST_DIR/聚慧/_internal" -type l ! -exec test -e {} \; -delete 2>/dev/null || true
 echo -e "${GREEN}  ✅ 已清理断裂符号链接${NC}"
 
 # 同步 _internal 到 .app（用 -R 保留符号链接，不跟随）
-rm -rf "$DIST_DIR/PolySage.app/Contents/Resources/_internal"
-cp -R "$DIST_DIR/PolySage/_internal" "$DIST_DIR/PolySage.app/Contents/Resources/_internal"
+rm -rf "$DIST_DIR/聚慧.app/Contents/Resources/_internal"
+cp -R "$DIST_DIR/聚慧/_internal" "$DIST_DIR/聚慧.app/Contents/Resources/_internal"
 
 # 更新 Info.plist
-cp "$SCRIPT_DIR/Info.plist" "$DIST_DIR/PolySage.app/Contents/Info.plist"
+cp "$SCRIPT_DIR/Info.plist" "$DIST_DIR/聚慧.app/Contents/Info.plist"
 
 # 复制应用图标
 if [ -f "$SCRIPT_DIR/AppIcon.icns" ]; then
-    cp "$SCRIPT_DIR/AppIcon.icns" "$DIST_DIR/PolySage.app/Contents/Resources/AppIcon.icns"
+    cp "$SCRIPT_DIR/AppIcon.icns" "$DIST_DIR/聚慧.app/Contents/Resources/AppIcon.icns"
     echo -e "${GREEN}  ✅ 应用图标已嵌入${NC}"
 else
     echo -e "${YELLOW}  ⚠️  AppIcon.icns 未找到${NC}"
@@ -243,7 +243,7 @@ fi
 # 关键修复：创建 Qt6 framework 符号链接
 # .so 文件依赖 @rpath/QtXxx（纯名称），需创建符号链接指向 framework
 # ----------------------------------------------------------------
-APP_BUNDLE="$DIST_DIR/PolySage.app"
+APP_BUNDLE="$DIST_DIR/聚慧.app"
 APP_QT6LIB="$APP_BUNDLE/Contents/Resources/_internal/PyQt6/Qt6/lib"
 APP_FW="$APP_BUNDLE/Contents/Frameworks"
 
@@ -293,9 +293,9 @@ echo ""
 # ----------------------------------------------------------------
 echo -e "${YELLOW}[5/7] 签名 .app...${NC}"
 # 移除可能残留的 entitlements 和 TCC 记录
-xattr -cr "$DIST_DIR/PolySage.app" 2>/dev/null
+xattr -cr "$DIST_DIR/聚慧.app" 2>/dev/null
 # 用 --deep 递归签名所有组件（ad-hoc 签名不能用 --options=runtime，会导致 Team ID 不一致）
-codesign --force --deep --sign - "$DIST_DIR/PolySage.app" 2>&1 | tail -2
+codesign --force --deep --sign - "$DIST_DIR/聚慧.app" 2>&1 | tail -2
 echo -e "${GREEN}  ✅ 签名完成${NC}"
 echo ""
 
@@ -310,7 +310,7 @@ DMG_STAGING="$DIST_DIR/dmg_staging"
 rm -rf "$DMG_STAGING" "$DMG_PATH"
 mkdir -p "$DMG_STAGING"
 
-cp -R "$DIST_DIR/PolySage.app" "$DMG_STAGING/"
+cp -R "$DIST_DIR/聚慧.app" "$DMG_STAGING/"
 ln -s /Applications "$DMG_STAGING/Applications"
 
 echo -e "${BLUE}  创建磁盘镜像（单步模式，无需挂载）...${NC}"
@@ -344,11 +344,11 @@ echo -e "${GREEN}  🎉 打包成功！${NC}"
 echo -e "${BLUE}================================================${NC}"
 echo ""
 echo -e "${GREEN}📦 产物位置：${NC}"
-echo -e "  App:  $DIST_DIR/PolySage.app"
+echo -e "  App:  $DIST_DIR/聚慧.app"
 echo -e "  DMG:  $DMG_PATH"
 echo ""
 
-APP_SIZE=$(du -sh "$DIST_DIR/PolySage.app" 2>/dev/null | cut -f1)
+APP_SIZE=$(du -sh "$DIST_DIR/聚慧.app" 2>/dev/null | cut -f1)
 DMG_SIZE=$(du -sh "$DMG_PATH" 2>/dev/null | cut -f1)
 echo -e "${GREEN}📊 文件大小：${NC}"
 echo -e "  App:  $APP_SIZE"
@@ -356,13 +356,13 @@ echo -e "  DMG:  $DMG_SIZE"
 echo ""
 
 echo -e "${GREEN}🔧 架构验证：${NC}"
-ARCH=$(lipo -archs "$DIST_DIR/PolySage.app/Contents/MacOS/PolySage" 2>/dev/null || echo "unknown")
+ARCH=$(lipo -archs "$DIST_DIR/聚慧.app/Contents/MacOS/聚慧" 2>/dev/null || echo "unknown")
 echo -e "  可执行文件架构: $ARCH"
 echo ""
 
 echo -e "${BLUE}💡 安装方法：${NC}"
 echo -e "  1. 双击 .dmg 文件挂载"
-echo -e "  2. 将 PolySage.app 拖到 Applications 文件夹"
+echo -e "  2. 将 聚慧.app 拖到 Applications 文件夹"
 echo -e "  3. 首次打开：右键 → 打开（绕过 Gatekeeper）"
 echo -e "  4. 在启动台打开 聚慧 PolySage"
 echo ""

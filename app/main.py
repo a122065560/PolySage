@@ -76,8 +76,8 @@ def main():
 
     # 1. 创建 QApplication
     app = QApplication(sys.argv)
-    app.setApplicationName("PolySage")
-    app.setApplicationDisplayName("🪑 聚慧 PolySage")
+    app.setApplicationName("聚慧")
+    app.setApplicationDisplayName("🪑 聚慧")
     app.setOrganizationName("PolySage")
 
     # 设置应用图标
