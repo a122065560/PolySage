@@ -66,7 +66,7 @@ echo -e "${GREEN}  ✅ 已清理${NC}"
 echo ""
 
 # ----------------------------------------------------------------
-# Step 3: PyInstaller 打包（使用 PolySage.spec）
+# Step 3: PyInstaller 打包（命令行参数方式，避免 spec 文件导致 PYZ archive 丢失）
 # ----------------------------------------------------------------
 echo -e "${YELLOW}[3/7] PyInstaller 打包中（ARM64）...${NC}"
 echo -e "${BLUE}  这可能需要几分钟...${NC}"
@@ -77,7 +77,93 @@ mkdir -p "$PYINSTALLER_CONFIG_DIR"
 python3 -m PyInstaller \
     --noconfirm \
     --clean \
-    PolySage.spec 2>&1 | tail -10
+    --target-arch arm64 \
+    --windowed \
+    --osx-bundle-identifier com.polysage.app \
+    --name "PolySage" \
+    --icon AppIcon.icns \
+    --add-data "logo_ui.png:." \
+    --add-data "logo_ui@2x.png:." \
+    main.py \
+    ui_main_window.py \
+    ui_widgets.py \
+    ui_worker.py \
+    ui_flowlayout.py \
+    browser.py \
+    core.py \
+    config_manager.py \
+    utils.py \
+    logger.py \
+    platform_adapter.py \
+    macos_adapter.py \
+    windows_adapter.py \
+    --hidden-import PyQt6 \
+    --hidden-import PyQt6.QtCore \
+    --hidden-import PyQt6.QtGui \
+    --hidden-import PyQt6.QtWidgets \
+    --hidden-import PyQt6.sip \
+    --hidden-import qasync \
+    --hidden-import playwright \
+    --hidden-import playwright.async_api \
+    --hidden-import playwright._impl \
+    --hidden-import openai \
+    --hidden-import platform_adapter \
+    --hidden-import macos_adapter \
+    --hidden-import windows_adapter \
+    --collect-submodules PyQt6 \
+    --collect-binaries PyQt6 \
+    --collect-all playwright \
+    --collect-data qasync \
+    --copy-metadata openai \
+    --copy-metadata qasync \
+    --exclude-module PyQt6.Qt6 \
+    --exclude-module tkinter \
+    --exclude-module matplotlib \
+    --exclude-module numpy \
+    --exclude-module pandas \
+    --exclude-module PIL \
+    --exclude-module PyQt5 \
+    --exclude-module PySide6 \
+    --exclude-module PyQt6.Qt3DCore \
+    --exclude-module PyQt6.Qt3DRender \
+    --exclude-module PyQt6.Qt3DAnimation \
+    --exclude-module PyQt6.Qt3DExtras \
+    --exclude-module PyQt6.Qt3DInput \
+    --exclude-module PyQt6.Qt3DLogic \
+    --exclude-module PyQt6.QtBluetooth \
+    --exclude-module PyQt6.QtCharts \
+    --exclude-module PyQt6.QtDataVisualization \
+    --exclude-module PyQt6.QtDesigner \
+    --exclude-module PyQt6.QtHelp \
+    --exclude-module PyQt6.QtMultimedia \
+    --exclude-module PyQt6.QtMultimediaWidgets \
+    --exclude-module PyQt6.QtNetwork \
+    --exclude-module PyQt6.QtNfc \
+    --exclude-module PyQt6.QtOpenGL \
+    --exclude-module PyQt6.QtOpenGLWidgets \
+    --exclude-module PyQt6.QtPdf \
+    --exclude-module PyQt6.QtPdfWidgets \
+    --exclude-module PyQt6.QtPositioning \
+    --exclude-module PyQt6.QtPrintSupport \
+    --exclude-module PyQt6.QtQml \
+    --exclude-module PyQt6.QtQuick \
+    --exclude-module PyQt6.QtQuick3D \
+    --exclude-module PyQt6.QtQuickControls2 \
+    --exclude-module PyQt6.QtQuickWidgets \
+    --exclude-module PyQt6.QtRemoteObjects \
+    --exclude-module PyQt6.QtSensors \
+    --exclude-module PyQt6.QtSerialPort \
+    --exclude-module PyQt6.QtSpatialAudio \
+    --exclude-module PyQt6.QtSql \
+    --exclude-module PyQt6.QtTest \
+    --exclude-module PyQt6.QtTextToSpeech \
+    --exclude-module PyQt6.QtWebChannel \
+    --exclude-module PyQt6.QtWebEngineCore \
+    --exclude-module PyQt6.QtWebEngineQuick \
+    --exclude-module PyQt6.QtWebEngineWidgets \
+    --exclude-module PyQt6.QtWebSockets \
+    --exclude-module PyQt6.QtXml \
+    2>&1 | tail -10
 
 if [ ! -d "$DIST_DIR/PolySage.app" ]; then
     echo -e "${RED}❌ 打包失败${NC}"
@@ -104,8 +190,8 @@ if [ -n "$QT6_LIB" ] && [ -d "$QT6_LIB" ]; then
     # 清理 PyInstaller --collect-binaries 已创建的不完整 Qt6/lib，避免 cp 冲突
     rm -rf "$DIST_DIR/PolySage/_internal/PyQt6/Qt6/lib"
     mkdir -p "$DIST_DIR/PolySage/_internal/PyQt6/Qt6/lib"
-    # 只复制实际使用的3个Qt6框架（而非全部85个），节省约400MB
-    for fw in QtCore QtGui QtWidgets; do
+    # 只复制实际使用的4个Qt6框架（而非全部85个），节省约400MB
+    for fw in QtCore QtGui QtWidgets QtDBus; do
         if [ -d "$QT6_LIB/$fw.framework" ]; then
             cp -R "$QT6_LIB/$fw.framework" "$DIST_DIR/PolySage/_internal/PyQt6/Qt6/lib/"
             echo "  复制 Qt6/$fw framework ✓"
@@ -113,7 +199,7 @@ if [ -n "$QT6_LIB" ] && [ -d "$QT6_LIB" ]; then
             echo "  ⚠️ 未找到 $QT6_LIB/$fw.framework"
         fi
     done
-    echo -e "${GREEN}  ✅ Qt6 framework 已嵌入（仅 QtCore/QtGui/QtWidgets）${NC}"
+    echo -e "${GREEN}  ✅ Qt6 framework 已嵌入（仅 QtCore/QtGui/QtWidgets/QtDBus）${NC}"
 else
     echo -e "${YELLOW}  ⚠️  Qt6 库未找到 (QT6_LIB='$QT6_LIB')${NC}"
 fi
