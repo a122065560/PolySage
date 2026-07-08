@@ -230,7 +230,7 @@ echo -e "${YELLOW}[5/7] 签名 .app...${NC}"
 # 移除可能残留的 entitlements 和 TCC 记录
 xattr -cr "$DIST_DIR/PolySage.app" 2>/dev/null
 # 只签主可执行文件，不递归签名嵌入的库（避免触发权限请求）
-codesign --force --sign - "$DIST_DIR/PolySage.app" 2>&1 | tail -2
+codesign --force --deep --sign - "$DIST_DIR/PolySage.app" 2>&1 | tail -2
 echo -e "${GREEN}  ✅ 签名完成${NC}"
 echo ""
 
