@@ -271,12 +271,6 @@ echo -e "${GREEN}  ✅ Frameworks/ 目录创建 $fw_count 个符号链接${NC}"
 # 3. 复制 qt.conf 到 Resources/
 cp "$SCRIPT_DIR/qt.conf" "$APP_BUNDLE/Contents/Resources/qt.conf" 2>/dev/null || true
 
-# 4. 创建 _internal 符号链接指向 ../Frameworks
-#    PyInstaller 的 PyQt6 runtime hook 通过 _internal 路径查找 Qt plugins/libraries
-#    删除实体 _internal 后需创建符号链接重定向到 Frameworks（避免 +300MB 重复）
-ln -sf ../Frameworks "$APP_BUNDLE/Contents/Resources/_internal"
-echo -e "${GREEN}  ✅ _internal 符号链接已创建（→ ../Frameworks）${NC}"
-
 echo -e "${GREEN}  ✅ 资源已同步${NC}"
 echo ""
 
@@ -289,6 +283,11 @@ xattr -cr "$DIST_DIR/聚慧.app" 2>/dev/null
 # 用 --deep 递归签名所有组件（ad-hoc 签名不能用 --options=runtime，会导致 Team ID 不一致）
 codesign --force --deep --sign - "$DIST_DIR/聚慧.app" 2>&1 | tail -2
 echo -e "${GREEN}  ✅ 签名完成${NC}"
+
+# 签名后创建 _internal 符号链接（codesign --deep 无法处理指向父目录的符号链接，会报错退出）
+# PyInstaller 的 PyQt6 runtime hook 通过 _internal 路径查找 Qt plugins/libraries
+ln -sf ../Frameworks "$DIST_DIR/聚慧.app/Contents/Resources/_internal"
+echo -e "${GREEN}  ✅ _internal 符号链接已创建（→ ../Frameworks）${NC}"
 echo ""
 
 # ----------------------------------------------------------------
