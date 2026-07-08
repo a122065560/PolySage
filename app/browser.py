@@ -112,11 +112,11 @@ class ChromeManager:
         # 页面创建锁：防止并发调用 get_or_create_page 导致重复打开页面
         import asyncio
         self._page_lock = asyncio.Lock()
-        # 思考模式缓存：{ai_name: True} 表示已确认无需再检测
-        self._thinking_mode_cache = {}
         # 思考模式操作锁：防止同一个 AI 被并发操作（避免无限循环）
         self._thinking_in_progress = set()  # {ai_name}
-        # 思考模式失败计数：{ai_name: count}，超过3次后停止重试
+        # 思考模式启用冷却：{ai_name: timestamp}，防止频繁重试启用
+        self._thinking_enable_cooldown = {}
+        # 思考模式连续失败计数：{ai_name: count}
         self._thinking_fail_count = {}
         # URL 重定向缓存：{config_url: final_url}，处理跨域重定向
         self._url_redirect_cache = {}
@@ -132,10 +132,10 @@ class ChromeManager:
             ai_name: 指定 AI 名称。如果为 None 则清除所有缓存。
         """
         if ai_name:
-            self._thinking_mode_cache.pop(ai_name, None)
+            self._thinking_enable_cooldown.pop(ai_name, None)
             self._thinking_fail_count.pop(ai_name, None)
         else:
-            self._thinking_mode_cache.clear()
+            self._thinking_enable_cooldown.clear()
             self._thinking_fail_count.clear()
 
     # ------------------------------------------------------------------
@@ -2529,28 +2529,153 @@ class ChromeManager:
 
         return "unknown", "无法确定登录状态，请手动确认。"
 
-    async def ensure_thinking_mode(self, page: Page, ai_config: dict) -> tuple:
+    # ------------------------------------------------------------------
+    # 统一状态检测：对话框 + 登录 + 思考模式
+    # 检测与操作完全分离：检测只读取状态，操作才执行点击
+    # ------------------------------------------------------------------
+
+    async def check_ai_ready(self, page: Page, ai_config: dict) -> tuple:
+        """统一检测 AI 是否就绪（检测 ONLY，不操作）。
+
+        检测三个条件：
+        1. 对话框存在（输入框可见）
+        2. 已登录（check_login_status）
+        3. 思考模式已开启（DeepSeek 跳过）
+
+        Returns:
+            tuple: (status, reason)
+            status: "green" 或 "orange"
+            reason: 具体原因，用于 tooltip 显示
         """
-        检测并开启 AI 平台的思考/深度思考模式（基于配置）。
+        ai_name = ai_config.get("name", "未知")
+        selectors = ai_config.get("selectors", {})
 
-        支持两种开关类型（由配置 thinking_mode.type 决定）：
-        - toggle: 按钮式开关，通过 active_attr/active_value 判断是否已激活
-        - dropdown: 下拉菜单式，通过 label_selector 读取标签判断，点击 option_selector 选择
+        # 1. 检测对话框是否存在
+        input_selector = selectors.get("input_textarea", "textarea")
+        input_el = await self._try_locate(page, input_selector, state="visible", timeout=3000)
+        if input_el is None:
+            return "orange", "无对话框（页面未加载或需登录）"
 
-        配置字段（thinking_mode）：
-        - enabled: 是否启用
-        - type: "toggle" 或 "dropdown"
-        - selector: 开关/触发器的 CSS 选择器
-        - label_selector: (dropdown) 标签元素的选择器
-        - label_text: 激活状态的标签文本关键词
-        - option_selector: (dropdown) 选项元素的选择器
-        - option_text: (dropdown) 要点击的选项文本
-        - active_attr: (toggle) 激活状态属性名（如 aria-pressed）
-        - active_value: (toggle) 激活状态的属性值（如 true）
+        # 2. 检测登录状态
+        login_status, login_msg = await self.check_login_status(page, ai_config)
+        if login_status != "logged_in":
+            return "orange", f"未登录（{login_msg}）"
 
-        Args:
-            page: Playwright Page
-            ai_config: AI 平台配置
+        # 3. 检测思考模式（DeepSeek 跳过）
+        tm = ai_config.get("thinking_mode", {})
+        if tm.get("enabled", False):
+            is_active, detect_reason = await self.detect_thinking_mode(page, ai_config)
+            if not is_active:
+                return "orange", f"未打开思考模式（{detect_reason}）"
+
+        return "green", "已就绪"
+
+    # ------------------------------------------------------------------
+    # 思考模式：检测（只读，不操作）
+    # ------------------------------------------------------------------
+
+    async def detect_thinking_mode(self, page: Page, ai_config: dict) -> tuple:
+        """检测思考模式是否已开启（只读取状态，不点击任何按钮）。
+
+        支持新配置格式（thinking_mode.detect）和旧格式（兼容）。
+
+        Returns:
+            tuple: (is_active: bool, reason: str)
+        """
+        ai_name = ai_config.get("name", "未知")
+        tm = ai_config.get("thinking_mode", {})
+
+        if not tm.get("enabled", False):
+            return True, "无需思考模式"
+
+        # 获取检测配置：优先新格式，兼容旧格式
+        detect_cfg = tm.get("detect", {})
+        if not detect_cfg:
+            # 兼容旧格式：从 thinking_mode 顶层提取
+            detect_cfg = {
+                "type": tm.get("type", "toggle"),
+                "selector": tm.get("selector", ""),
+                "label_selector": tm.get("label_selector", ""),
+                "label_text": tm.get("label_text", ""),
+                "active_attr": tm.get("active_attr", "aria-pressed"),
+                "active_value": tm.get("active_value", "true"),
+            }
+
+        detect_type = detect_cfg.get("type", "toggle")
+
+        try:
+            if detect_type == "dropdown":
+                label_selector = detect_cfg.get("label_selector", "")
+                label_text = detect_cfg.get("label_text", "")
+                if not label_selector:
+                    return False, "未配置检测选择器"
+
+                result = await page.evaluate("""
+                    (config) => {
+                        let labelEl = null;
+                        try { labelEl = document.querySelector(config.label_selector); } catch(e) {}
+                        if (!labelEl) return {found: false, label: ''};
+                        const label = (labelEl.textContent || '').trim();
+                        return {found: true, label: label, active: label.includes(config.label_text)};
+                    }
+                """, {"label_selector": label_selector, "label_text": label_text})
+
+                if not result or not result.get("found"):
+                    return False, "未找到模式标签（页面未加载完）"
+                if result.get("active"):
+                    return True, "思考模式已开启"
+                return False, f"当前模式: {result.get('label', '未知')}"
+
+            else:  # toggle
+                selector = detect_cfg.get("selector", "")
+                active_attr = detect_cfg.get("active_attr", "aria-pressed")
+                active_value = detect_cfg.get("active_value", "true")
+                label_text = detect_cfg.get("label_text", "")
+
+                if not selector:
+                    return False, "未配置检测选择器"
+
+                result = await page.evaluate("""
+                    (config) => {
+                        let toggle = null;
+                        try { toggle = document.querySelector(config.selector); } catch(e) {}
+                        if (!toggle && config.label_text) {
+                            const buttons = document.querySelectorAll('button, div[role="button"]');
+                            for (const btn of buttons) {
+                                const ariaLabel = btn.getAttribute('aria-label') || '';
+                                if (ariaLabel === config.label_text) { toggle = btn; break; }
+                            }
+                        }
+                        if (!toggle) return {found: false};
+                        const attrVal = toggle.getAttribute(config.active_attr);
+                        return {found: true, active: attrVal === config.active_value, attrVal: attrVal};
+                    }
+                """, {"selector": selector, "label_text": label_text,
+                      "active_attr": active_attr, "active_value": active_value})
+
+                if not result or not result.get("found"):
+                    return False, "未找到思考模式开关"
+                if result.get("active"):
+                    return True, "思考模式已开启"
+                return False, "思考模式未开启"
+
+        except Exception as e:
+            log_warning(f"[{ai_name}] 思考模式检测异常: {e}")
+            return False, f"检测异常: {e}"
+
+    # ------------------------------------------------------------------
+    # 思考模式：启用（只写，只操作不检测）
+    # ------------------------------------------------------------------
+
+    async def try_enable_thinking_mode(self, page: Page, ai_config: dict) -> tuple:
+        """尝试启用思考模式（执行操作步骤，不检测最终状态）。
+
+        执行 thinking_mode.enable_steps 中的每一步：
+        - click: 点击 selector 指定的元素
+        - wait: 等待指定毫秒
+        - click_text: 在 selector 范围内搜索包含 text 的元素并点击
+
+        启用后由调用方重新 detect 确认是否成功。
 
         Returns:
             tuple: (success: bool, message: str)
@@ -2558,18 +2683,19 @@ class ChromeManager:
         ai_name = ai_config.get("name", "未知")
         tm = ai_config.get("thinking_mode", {})
 
-        # 未配置思考模式或未启用 → 跳过
-        if not tm or not tm.get("enabled", False):
+        if not tm.get("enabled", False):
             return True, "无需思考模式"
-
-        # 缓存命中：已确认无需再检测
-        if self._thinking_mode_cache.get(ai_name):
-            return True, "已就绪"
 
         # 操作锁
         if ai_name in self._thinking_in_progress:
             return False, "正在操作中"
         self._thinking_in_progress.add(ai_name)
+
+        # 冷却检查：15秒内不重复尝试
+        import time
+        last_attempt = self._thinking_enable_cooldown.get(ai_name, 0)
+        if time.time() - last_attempt < 15:
+            return False, "自动切换冷却中（请手动开启或等待）"
 
         try:
             # 等待页面 DOM 稳定
@@ -2579,215 +2705,123 @@ class ChromeManager:
                 pass
             await page.wait_for_timeout(500)
 
-            tm_type = tm.get("type", "toggle")
-            selector = tm.get("selector", "")
-            label_text = tm.get("label_text", "")
+            steps = tm.get("enable_steps", [])
 
-            if tm_type == "dropdown":
-                # 下拉菜单式
-                label_selector = tm.get("label_selector", "")
-                option_selector = tm.get("option_selector", "")
-                option_text = tm.get("option_text", "")
+            # 兼容旧格式：如果没有 enable_steps，从旧字段构建
+            if not steps:
+                tm_type = tm.get("type", "toggle")
+                if tm_type == "dropdown":
+                    steps = [
+                        {"action": "click", "selector": tm.get("selector", "")},
+                        {"action": "wait", "ms": 1000},
+                        {"action": "click_text", "text": tm.get("option_text", ""),
+                         "selector": tm.get("option_selector", "")},
+                        {"action": "wait", "ms": 800},
+                    ]
+                else:  # toggle
+                    steps = [
+                        {"action": "click", "selector": tm.get("selector", "")},
+                        {"action": "wait", "ms": 800},
+                    ]
 
-                result = await page.evaluate("""
-                    async (config) => {
-                        let trigger = null;
-                        try { trigger = document.querySelector(config.selector); } catch(e) {}
-                        if (!trigger) return {found: false};
+            for step in steps:
+                action = step.get("action", "")
 
-                        let labelEl = null;
-                        if (config.label_selector) {
-                            try { labelEl = document.querySelector(config.label_selector); } catch(e) {}
+                if action == "click":
+                    selector = step.get("selector", "")
+                    if not selector:
+                        continue
+                    await page.evaluate("""
+                        (sel) => {
+                            let el = null;
+                            try { el = document.querySelector(sel); } catch(e) {}
+                            if (el) el.click();
                         }
-                        const label = labelEl ? labelEl.textContent.trim() : '';
+                    """, selector)
 
-                        if (label.includes(config.label_text))
-                            return {found: true, active: true, label: label};
-                        if (!label)
-                            return {found: false, msg: '标签为空，页面未加载完'};
+                elif action == "wait":
+                    ms = step.get("ms", 500)
+                    await page.wait_for_timeout(ms)
 
-                        // 点击触发器打开下拉
-                        trigger.click();
-                        await new Promise(r => setTimeout(r, 1200));
-
-                        let clicked = false;
-
-                        // 策略1：使用配置的 CSS 选择器查找选项
-                        if (config.option_selector && config.option_text) {
-                            const opts = document.querySelectorAll(config.option_selector);
-                            for (const opt of opts) {
-                                if (opt.textContent.trim().includes(config.option_text)) {
-                                    let target = opt;
-                                    for (let i = 0; i < 5; i++) {
-                                        if (!target) break;
-                                        const cls = (target.className || '').toString();
-                                        const role = target.getAttribute('role') || '';
-                                        if (cls.includes('item') || cls.includes('mode') ||
-                                            cls.includes('option') ||
-                                            role === 'option' || role === 'menuitem' ||
-                                            target.tagName === 'LI' || target.tagName === 'BUTTON') {
-                                            target.click();
-                                            clicked = true;
-                                            break;
-                                        }
-                                        target = target.parentElement;
-                                    }
-                                    if (!clicked) {
-                                        opt.click();
-                                        clicked = true;
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-
-                        // 策略2：文本匹配回退 —— 搜索所有可见元素中包含选项文本的
-                        // 当 Kimi 等平台更改 DOM 结构导致 CSS 选择器失效时使用
-                        if (!clicked && config.option_text) {
-                            const allElements = document.querySelectorAll(
-                                'div, li, span, button, a, p'
-                            );
-                            for (const el of allElements) {
-                                if (el === trigger || trigger.contains(el)) continue;
-                                const text = (el.textContent || '').trim();
-                                if (text.includes(config.option_text) && text.length < 50) {
-                                    const rect = el.getBoundingClientRect();
-                                    if (rect.width > 0 && rect.height > 0) {
-                                        let clickTarget = el;
-                                        let parent = el.parentElement;
-                                        for (let i = 0; i < 3; i++) {
-                                            if (!parent) break;
-                                            const pcls = (parent.className || '').toString();
-                                            const prole = parent.getAttribute('role') || '';
-                                            if (pcls.includes('item') || pcls.includes('option') ||
-                                                pcls.includes('mode') ||
-                                                prole === 'option' || prole === 'menuitem' ||
-                                                parent.tagName === 'LI') {
-                                                clickTarget = parent;
+                elif action == "click_text":
+                    text = step.get("text", "")
+                    selector = step.get("selector", "")
+                    if not text:
+                        continue
+                    await page.evaluate("""
+                        async (config) => {
+                            let clicked = false;
+                            // 策略1：使用 CSS 选择器范围搜索
+                            if (config.selector) {
+                                const opts = document.querySelectorAll(config.selector);
+                                for (const opt of opts) {
+                                    if (opt.textContent.trim().includes(config.text)) {
+                                        let target = opt;
+                                        for (let i = 0; i < 5; i++) {
+                                            if (!target) break;
+                                            const cls = (target.className || '').toString();
+                                            const role = target.getAttribute('role') || '';
+                                            if (cls.includes('item') || cls.includes('mode') ||
+                                                cls.includes('option') ||
+                                                role === 'option' || role === 'menuitem' ||
+                                                target.tagName === 'LI' || target.tagName === 'BUTTON') {
+                                                target.click();
+                                                clicked = true;
                                                 break;
                                             }
-                                            parent = parent.parentElement;
+                                            target = target.parentElement;
                                         }
-                                        clickTarget.click();
-                                        clicked = true;
+                                        if (!clicked) { opt.click(); clicked = true; }
                                         break;
                                     }
                                 }
                             }
-                        }
-
-                        if (!clicked) {
-                            trigger.click();
-                            return {found: true, active: false, label: label, msg: '未找到选项'};
-                        }
-
-                        await new Promise(r => setTimeout(r, 800));
-                        const newLabelEl = config.label_selector ?
-                            document.querySelector(config.label_selector) : null;
-                        const newLabel = newLabelEl ? newLabelEl.textContent.trim() : '';
-                        return {found: true, active: newLabel.includes(config.label_text),
-                                label: newLabel, msg: '切换后: ' + newLabel};
-                    }
-                """, {"selector": selector, "label_selector": label_selector,
-                      "label_text": label_text, "option_selector": option_selector,
-                      "option_text": option_text})
-
-            else:
-                # toggle 按钮式
-                active_attr = tm.get("active_attr", "aria-pressed")
-                active_value = tm.get("active_value", "true")
-
-                result = await page.evaluate("""
-                    async (config) => {
-                        let toggle = null;
-                        // 主选择器：try-catch 防止 :has-text() 等非标准CSS导致报错
-                        try {
-                            toggle = document.querySelector(config.selector);
-                        } catch(e) {
-                            // 选择器含 Playwright 伪选择器，跳过，走备选逻辑
-                        }
-
-                        // 备选1：通过 aria-label 查找
-                        if (!toggle && config.label_text) {
-                            const buttons = document.querySelectorAll('button, div[role="button"]');
-                            for (const btn of buttons) {
-                                const ariaLabel = btn.getAttribute('aria-label') || '';
-                                if (ariaLabel === config.label_text) {
-                                    toggle = btn;
-                                    break;
-                                }
-                            }
-                        }
-
-                        // 备选2：搜索含 label_text 文本的元素
-                        if (!toggle && config.label_text) {
-                            const allDivs = document.querySelectorAll('div, button, span');
-                            for (const el of allDivs) {
-                                const text = (el.textContent || '').trim();
-                                if (text === config.label_text || text === config.label_text + '(R1)') {
-                                    let node = el;
-                                    for (let i = 0; i < 5; i++) {
-                                        if (!node) break;
-                                        const cls = (node.className || '').toString();
-                                        if (cls.includes('toggle') || cls.includes('button') ||
-                                            node.tagName === 'BUTTON' ||
-                                            node.getAttribute('role') === 'button' ||
-                                            node.hasAttribute(config.active_attr)) {
-                                            toggle = node;
+                            // 策略2：全局文本匹配回退
+                            if (!clicked) {
+                                const allElements = document.querySelectorAll(
+                                    'div, li, span, button, a, p'
+                                );
+                                for (const el of allElements) {
+                                    const elText = (el.textContent || '').trim();
+                                    if (elText.includes(config.text) && elText.length < 50) {
+                                        const rect = el.getBoundingClientRect();
+                                        if (rect.width > 0 && rect.height > 0) {
+                                            let clickTarget = el;
+                                            let parent = el.parentElement;
+                                            for (let i = 0; i < 3; i++) {
+                                                if (!parent) break;
+                                                const pcls = (parent.className || '').toString();
+                                                const prole = parent.getAttribute('role') || '';
+                                                if (pcls.includes('item') || pcls.includes('option') ||
+                                                    pcls.includes('mode') ||
+                                                    prole === 'option' || prole === 'menuitem' ||
+                                                    parent.tagName === 'LI') {
+                                                    clickTarget = parent;
+                                                    break;
+                                                }
+                                                parent = parent.parentElement;
+                                            }
+                                            clickTarget.click();
+                                            clicked = true;
                                             break;
                                         }
-                                        node = node.parentElement;
                                     }
-                                    if (toggle) break;
                                 }
                             }
                         }
+                    """, {"text": text, "selector": selector})
 
-                        if (!toggle) return {found: false};
-
-                        const attrVal = toggle.getAttribute(config.active_attr);
-                        const isActive = attrVal === config.active_value;
-
-                        if (isActive) return {found: true, active: true, text: config.label_text};
-
-                        toggle.click();
-                        await new Promise(r => setTimeout(r, 800));
-
-                        const newVal = toggle.getAttribute(config.active_attr);
-                        return {found: true, active: newVal === config.active_value,
-                                text: config.label_text, clicked: true};
-                    }
-                """, {"selector": selector, "label_text": label_text,
-                      "active_attr": active_attr, "active_value": active_value})
-
-            if result and result.get("found"):
-                if result.get("active"):
-                    log_info(f"[{ai_name}] 思考模式已开启（{result.get('label', result.get('text', ''))}）")
-                    self._thinking_mode_cache[ai_name] = True
-                    self._thinking_fail_count.pop(ai_name, None)
-                    return True, "已就绪"
-                else:
-                    msg = result.get("msg", result.get("label", result.get("text", "")))
-                    log_warning(f"[{ai_name}] 思考模式切换失败: {msg}")
-                    self._thinking_fail_count[ai_name] = self._thinking_fail_count.get(ai_name, 0) + 1
-                    if self._thinking_fail_count[ai_name] >= 3:
-                        log_warning(f"[{ai_name}] 思考模式切换失败3次，停止重试")
-                        self._thinking_mode_cache[ai_name] = True
-                        return True, "已就绪（跳过思考模式）"
-                    return False, f"切换失败: {msg}"
-
-            # 未找到开关
+            # 记录本次尝试时间
+            self._thinking_enable_cooldown[ai_name] = time.time()
             self._thinking_fail_count[ai_name] = self._thinking_fail_count.get(ai_name, 0) + 1
-            if self._thinking_fail_count[ai_name] >= 3:
-                log_info(f"[{ai_name}] 未找到思考模式按钮(已重试{self._thinking_fail_count[ai_name]}次)，跳过")
-                self._thinking_mode_cache[ai_name] = True
-                return True, "已就绪"
-            log_info(f"[{ai_name}] 未找到思考模式按钮(第{self._thinking_fail_count[ai_name]}次)，稍后重试")
-            return False, "页面加载中"
+
+            log_info(f"[{ai_name}] 思考模式启用步骤已执行（第{self._thinking_fail_count[ai_name]}次）")
+            return True, "操作已执行"
 
         except Exception as e:
-            log_warning(f"[{ai_name}] 思考模式检测失败: {e}")
-            return False, f"思考模式检测失败: {e}"
+            log_warning(f"[{ai_name}] 思考模式启用失败: {e}")
+            self._thinking_enable_cooldown[ai_name] = time.time()
+            return False, f"启用失败: {e}"
         finally:
             self._thinking_in_progress.discard(ai_name)
 

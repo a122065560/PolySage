@@ -21,7 +21,7 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 # 默认配置版本号（每次修改 DEFAULT_CONFIG 中的选择器/思考模式时递增）
 # 用于判断用户配置是否需要同步更新默认平台的配置
-DEFAULT_CONFIG_VERSION = 1
+DEFAULT_CONFIG_VERSION = 2
 
 # 默认配置
 DEFAULT_CONFIG = {
@@ -64,12 +64,8 @@ DEFAULT_CONFIG = {
                 "login_button": "button:has-text('登录')",
             },
             "thinking_mode": {
-                "enabled": True,
-                "type": "toggle",
-                "selector": "div.ds-toggle-button",
-                "label_text": "深度思考",
-                "active_attr": "aria-pressed",
-                "active_value": "true",
+                # DeepSeek flash 模式已足够强大，不需要思考模式
+                "enabled": False,
             },
         },
         {
@@ -87,12 +83,19 @@ DEFAULT_CONFIG = {
             },
             "thinking_mode": {
                 "enabled": True,
-                "type": "dropdown",
-                "selector": "div.think-mode-trigger",
-                "label_selector": "span.think-label",
-                "label_text": "深度",
-                "option_selector": "span.item-name",
-                "option_text": "深度",
+                # 检测配置（只读检测，不操作）
+                "detect": {
+                    "type": "dropdown",
+                    "label_selector": "span.think-label",
+                    "label_text": "深度",
+                },
+                # 启用步骤（按顺序执行，支持多步操作）
+                "enable_steps": [
+                    {"action": "click", "selector": "div.think-mode-trigger"},
+                    {"action": "wait", "ms": 1000},
+                    {"action": "click_text", "text": "深度", "selector": "span.item-name"},
+                    {"action": "wait", "ms": 800},
+                ],
             },
         },
         {
@@ -111,11 +114,17 @@ DEFAULT_CONFIG = {
             },
             "thinking_mode": {
                 "enabled": True,
-                "type": "toggle",
-                "selector": "button[aria-label='思考']",
-                "label_text": "思考",
-                "active_attr": "aria-pressed",
-                "active_value": "true",
+                "detect": {
+                    "type": "toggle",
+                    "selector": "button[aria-label='思考']",
+                    "label_text": "思考",
+                    "active_attr": "aria-pressed",
+                    "active_value": "true",
+                },
+                "enable_steps": [
+                    {"action": "click", "selector": "button[aria-label='思考']"},
+                    {"action": "wait", "ms": 800},
+                ],
             },
         },
         {
@@ -134,11 +143,17 @@ DEFAULT_CONFIG = {
             },
             "thinking_mode": {
                 "enabled": True,
-                "type": "toggle",
-                "selector": "button[data-testid='model-thinking-trigger-toggle']",
-                "label_text": "思考",
-                "active_attr": "aria-checked",
-                "active_value": "true",
+                "detect": {
+                    "type": "toggle",
+                    "selector": "button[data-testid='model-thinking-trigger-toggle']",
+                    "label_text": "思考",
+                    "active_attr": "aria-checked",
+                    "active_value": "true",
+                },
+                "enable_steps": [
+                    {"action": "click", "selector": "button[data-testid='model-thinking-trigger-toggle']"},
+                    {"action": "wait", "ms": 800},
+                ],
             },
         },
         {
@@ -157,12 +172,18 @@ DEFAULT_CONFIG = {
             },
             "thinking_mode": {
                 "enabled": True,
-                "type": "dropdown",
-                "selector": "div.current-model, div.model-name",
-                "label_selector": "div.model-name span.name",
-                "label_text": "思考",
-                "option_selector": "div[class*='dropdown'] div[class*='item'], div[class*='menu-item'], li[class*='item'], div[class*='model-item'], [role='option'], [role='menuitem'], div[class*='select'] div[class*='option']",
-                "option_text": "思考",
+                "detect": {
+                    "type": "dropdown",
+                    "label_selector": "div.model-name span.name",
+                    "label_text": "思考",
+                },
+                "enable_steps": [
+                    {"action": "click", "selector": "div.current-model, div.model-name"},
+                    {"action": "wait", "ms": 1200},
+                    {"action": "click_text", "text": "思考",
+                     "selector": "div[class*='dropdown'] div[class*='item'], div[class*='menu-item'], li[class*='item'], div[class*='model-item'], [role='option'], [role='menuitem'], div[class*='select'] div[class*='option']"},
+                    {"action": "wait", "ms": 800},
+                ],
             },
         },
     ],

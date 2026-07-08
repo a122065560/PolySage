@@ -744,30 +744,40 @@ class PlatformEditDialog(QDialog):
         think_layout = QFormLayout(think_group)
         think_layout.setSpacing(6)
         tm = self.platform.get("thinking_mode", {})
+        # 兼容新格式：detect 子配置
+        detect_cfg = tm.get("detect", {})
 
         self.tm_enabled = QCheckBox("启用自动开启思考模式")
         self.tm_enabled.setChecked(tm.get("enabled", False))
         think_layout.addRow(self.tm_enabled)
 
-        self.tm_type = QComboBox()
-        self.tm_type.addItems(["toggle", "dropdown"])
-        self.tm_type.setCurrentText(tm.get("type", "toggle"))
-        think_layout.addRow("开关类型:", self.tm_type)
+        self.tm_detect_type = QComboBox()
+        self.tm_detect_type.addItems(["toggle", "dropdown"])
+        self.tm_detect_type.setCurrentText(detect_cfg.get("type", tm.get("type", "toggle")))
+        think_layout.addRow("检测类型:", self.tm_detect_type)
         self.tm_inputs = {}
+        # 新格式字段（detect 子配置）
         tm_fields = [
-            ("selector", "开关/触发器选择器:"),
-            ("label_selector", "标签选择器 (dropdown用):"),
+            ("label_selector", "标签选择器 (dropdown检测用):"),
             ("label_text", "激活标签文本:"),
-            ("option_selector", "选项选择器 (dropdown用):"),
-            ("option_text", "选项文本 (dropdown用):"),
+            ("selector", "开关选择器 (toggle检测用):"),
             ("active_attr", "激活属性名 (toggle用):"),
             ("active_value", "激活属性值 (toggle用):"),
         ]
         for key, label in tm_fields:
-            edit = QLineEdit(tm.get(key, ""))
+            edit = QLineEdit(detect_cfg.get(key, tm.get(key, "")))
             edit.setMinimumWidth(500)
             think_layout.addRow(label, edit)
             self.tm_inputs[key] = edit
+
+        # 启用步骤（enable_steps）
+        think_layout.addRow(QLabel("启用步骤（JSON格式，每步: click/wait/click_text）:"))
+        import json as _json
+        steps = tm.get("enable_steps", [])
+        self.tm_steps_edit = QLineEdit(_json.dumps(steps, ensure_ascii=False) if steps else "")
+        self.tm_steps_edit.setMinimumWidth(500)
+        self.tm_steps_edit.setPlaceholderText('[{"action":"click","selector":"..."},{"action":"wait","ms":800}]')
+        think_layout.addRow("enable_steps:", self.tm_steps_edit)
 
         layout.addWidget(think_group)
 
@@ -788,13 +798,24 @@ class PlatformEditDialog(QDialog):
         self.platform["enabled"] = self.enabled_cb.isChecked()
         for key, edit in self.sel_inputs.items():
             self.platform.setdefault("selectors", {})[key] = edit.text()
-        # 保存思考模式配置
-        tm = {
-            "enabled": self.tm_enabled.isChecked(),
-            "type": self.tm_type.currentText(),
-        }
-        for key, edit in self.tm_inputs.items():
-            tm[key] = edit.text()
+        # 保存思考模式配置（新格式：detect + enable_steps）
+        tm = {"enabled": self.tm_enabled.isChecked()}
+        if self.tm_enabled.isChecked():
+            # 检测配置
+            detect_cfg = {"type": self.tm_detect_type.currentText()}
+            for key, edit in self.tm_inputs.items():
+                val = edit.text().strip()
+                if val:
+                    detect_cfg[key] = val
+            tm["detect"] = detect_cfg
+            # 启用步骤
+            import json as _json
+            steps_text = self.tm_steps_edit.text().strip()
+            if steps_text:
+                try:
+                    tm["enable_steps"] = _json.loads(steps_text)
+                except Exception:
+                    pass  # JSON 解析失败时忽略
         self.platform["thinking_mode"] = tm
         self.accept()
 
@@ -1566,8 +1587,7 @@ class MainWindow(QMainWindow):
                 # 页面从关闭变为打开 → 清除缓存，重新检测
                 log_info(f"检测到 {name} 页面重新打开，清除缓存重新检测")
                 self._ai_state_cache.pop(name, None)
-                self.chrome_mgr._thinking_mode_cache.pop(name, None)
-                self.chrome_mgr._thinking_fail_count.pop(name, None)
+                self.chrome_mgr.clear_thinking_cache(name)
         self._last_page_open = current_page_open
 
         # 中军帐为唯一权威源：
@@ -1589,7 +1609,15 @@ class MainWindow(QMainWindow):
         # 同步更新中军帐内 AI 芯片的框体颜色（含军师）
         chip = self._ai_chips.get(ai_name)
         if chip is not None:
+            # 更新 tooltip 显示状态原因（橙色时显示具体原因）
+            msg = cached.get("msg", "未知")
+            color = cached.get("color", "orange")
             is_arb = (ai_name == self._arbitrator)
+            arb_hint = " | 右键设为军师" if not is_arb else " | 当前军师"
+            if color == "green":
+                chip.setToolTip(f"✅ {msg}{arb_hint}（左键移出讨论）")
+            else:
+                chip.setToolTip(f"⚠️ {msg}{arb_hint}（左键移出讨论）")
             is_green = (cached["color"] == "green")
             if is_arb:
                 if is_green:
@@ -2133,10 +2161,10 @@ class MainWindow(QMainWindow):
                 }
             """)
             chip.setCursor(Qt.CursorShape.PointingHandCursor)
-            # tooltip 显示状态消息
+            # tooltip 显示状态消息（初始，后续由 _update_ai_icon 动态更新）
             msg = self._get_ai_status_msg(name)
             arb_hint = " | 右键设为军师" if not is_arb else " | 当前军师"
-            chip.setToolTip(f"状态: {msg}{arb_hint}（左键移出讨论）")
+            chip.setToolTip(f"⚠️ {msg}{arb_hint}（左键移出讨论）")
 
             # 鼠标点击事件：左键移出，右键设为军师
             def _chip_mouse_press(event, n=name):
@@ -2164,8 +2192,7 @@ class MainWindow(QMainWindow):
                 self.active_ais.append(name)
             # 清除缓存，触发重新检测（包括思考模式）
             self._ai_state_cache.pop(name, None)
-            self.chrome_mgr._thinking_mode_cache.pop(name, None)
-            self.chrome_mgr._thinking_fail_count.pop(name, None)
+            self.chrome_mgr.clear_thinking_cache(name)
             # Chrome 运行时创建 AIWorker（会自动打开页面+监控）
             if self.chrome_mgr.is_chrome_running():
                 self.worker.on_ai_added(name)

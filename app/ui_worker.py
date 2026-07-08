@@ -93,19 +93,24 @@ class AIWorker:
             log_info(f"[AIWorker:{self.name}] 已停止")
 
     async def _check_status(self):
-        """检测登录状态 + 思考模式，报告大脑。"""
-        # 讨论进行中时，已经绿色的AI不再反复检测（防止波动）
-        # 只有非绿色AI才需要检测
-        if self._discussion_active and self._last_status == "green":
-            return  # 讨论中已就绪的AI跳过检测，避免页面繁忙时误判
+        """统一检测 AI 就绪状态：对话框 + 登录 + 思考模式。
 
-        # 检查页面是否已失效（网络波动/Chrome重启等），尝试重建
+        流程：
+        1. check_ai_ready（只读检测三个条件）
+        2. 如果橙色且原因是思考模式未开启 → try_enable_thinking_mode（操作）
+        3. 操作后重新 detect_thinking_mode 确认
+        4. 用户手动开启后，下次检测自动变绿（检测与操作独立）
+        """
+        # 讨论进行中时，已绿色的AI不再反复检测（防止波动）
+        if self._discussion_active and self._last_status == "green":
+            return
+
+        # 检查页面是否已失效，尝试重建
         page_invalid = False
         if self.page is None:
             page_invalid = True
         else:
             try:
-                # 轻量检测：访问page.url看页面是否还活着
                 _ = self.page.url
             except Exception:
                 page_invalid = True
@@ -119,9 +124,7 @@ class AIWorker:
                 )
                 if self.page:
                     log_info(f"[AIWorker:{self.name}] 页面重建成功")
-                    # 页面重建后清除思考模式缓存，使下次状态检查时重新检测思考模式
                     self.chrome_mgr.clear_thinking_cache(self.name)
-                    # 重建后等待页面加载稳定
                     await asyncio.sleep(3)
                 else:
                     self._last_status = "orange"
@@ -134,25 +137,38 @@ class AIWorker:
                 return
 
         try:
-            login_status, login_msg = await asyncio.wait_for(
-                self.chrome_mgr.check_login_status(self.page, self.config),
-                timeout=8
+            # 1. 统一检测（只读，不操作）
+            status, reason = await asyncio.wait_for(
+                self.chrome_mgr.check_ai_ready(self.page, self.config),
+                timeout=15
             )
-            if login_status != "logged_in":
-                self._last_status = "orange"
-                await self.brain_queue.put(("status", self.name, "orange", login_msg))
-                return
 
-            thinking_ok, thinking_msg = await asyncio.wait_for(
-                self.chrome_mgr.ensure_thinking_mode(self.page, self.config),
-                timeout=8
-            )
-            if thinking_ok:
-                self._last_status = "green"
-                await self.brain_queue.put(("status", self.name, "green", "已就绪"))
-            else:
-                self._last_status = "orange"
-                await self.brain_queue.put(("status", self.name, "orange", thinking_msg))
+            # 2. 如果橙色且原因是思考模式 → 尝试自动启用
+            if status == "orange" and "思考模式" in reason:
+                tm = self.config.get("thinking_mode", {})
+                if tm.get("enabled", False):
+                    # 尝试启用（操作）
+                    enable_ok, enable_msg = await asyncio.wait_for(
+                        self.chrome_mgr.try_enable_thinking_mode(self.page, self.config),
+                        timeout=10
+                    )
+                    if enable_ok:
+                        # 操作后重新检测（确认是否成功）
+                        await asyncio.sleep(1)
+                        is_active, detect_reason = await asyncio.wait_for(
+                            self.chrome_mgr.detect_thinking_mode(self.page, self.config),
+                            timeout=8
+                        )
+                        if is_active:
+                            status = "green"
+                            reason = "已就绪"
+                        else:
+                            reason = f"未打开思考模式（自动切换失败，请手动开启）"
+
+            # 3. 报告状态
+            self._last_status = status
+            await self.brain_queue.put(("status", self.name, status, reason))
+
         except asyncio.TimeoutError:
             self._last_status = "orange"
             await self.brain_queue.put(("status", self.name, "orange", "检测超时"))
@@ -160,7 +176,6 @@ class AIWorker:
             error_msg = str(e)
             self._last_status = "orange"
             await self.brain_queue.put(("status", self.name, "orange", f"检测异常: {e}"))
-            # 如果是页面关闭错误，标记下次需要重建
             if "closed" in error_msg.lower() or "target" in error_msg.lower():
                 self.page = None
 
