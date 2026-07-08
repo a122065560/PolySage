@@ -77,7 +77,6 @@ mkdir -p "$PYINSTALLER_CONFIG_DIR"
 python3 -m PyInstaller \
     --noconfirm \
     --clean \
-    --target-arch arm64 \
     PolySage.spec 2>&1 | tail -10
 
 if [ ! -d "$DIST_DIR/PolySage.app" ]; then
