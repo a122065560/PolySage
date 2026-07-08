@@ -16,7 +16,7 @@ import os
 from typing import Optional
 
 from browser import ChromeManager
-from logger import log_info, log_warning, log_exception, log_error
+from logger import log_info, log_warning, log_exception, log_error, DiscussionLogger
 from utils import (
     build_init_prompt,
     build_topic_prompt,
@@ -365,11 +365,15 @@ class HostedMode:
         self._is_running = True
         self._stop_requested = False
         # 新讨论开始时，清除上一次讨论的回复缓存
-        # 这样"提取到与上一次相同"检测不会误判新回复为旧回复
-        # 注意：这不影响AI网页上的对话上下文，AI仍能看到之前的完整对话
         if hasattr(self.chrome, '_last_reply'):
             self.chrome._last_reply.clear()
             log_info("已清除AI回复缓存（新讨论开始，AI网页上下文不受影响）")
+
+        # 创建讨论记录器
+        participants = [a["name"] for a in ai_list]
+        disc_logger = DiscussionLogger(topic, participants)
+        log_info(f"[大脑] 讨论开始: {topic} (参与: {', '.join(participants)})")
+
         history = []
         round_count = 0
         n = len(ai_list)
@@ -659,6 +663,9 @@ class HostedMode:
             current_round = round_count + 1
             round_replies = [{"name": arb_ai["name"], "content": arb_reply_clean, "timestamp": arb_timestamp, "round": current_round}]
             history.append(format_history_entry(arb_ai["name"], f"[第{current_round}轮] {arb_reply_clean}"))
+            # 记录军师发言到讨论日志
+            disc_logger.add_message(arb_ai["name"], arb_reply_clean, current_round)
+            log_info(f"[大脑] {arb_ai['name']} 第{current_round}轮发言 ({len(arb_reply_clean)}字) → msg#{disc_logger._msg_counter}")
             if progress_callback:
                 progress_callback("ai_reply", arb_ai["name"], f"[第{current_round}轮] {arb_reply_clean}")
                 progress_callback("status", "系统", f"✅ 第{current_round}轮：军师 {arb_ai['name']} 已发言")
@@ -737,6 +744,11 @@ class HostedMode:
                                 reply_clean = reply_clean.replace(self.arbitration_signal, "").strip()
                             round_replies.append({"name": ai["name"], "content": reply_clean, "timestamp": reply_ts, "round": current_round})
                             history.append(format_history_entry(ai["name"], f"[第{current_round}轮] {reply_clean}"))
+                            # 记录谋士发言到讨论日志
+                            # context_received: 引用本轮军师+之前轮次的回复
+                            ctx_ids = [disc_logger._msg_counter - len(round_replies) + 1]  # 军师msg ID
+                            msg_id = disc_logger.add_message(ai["name"], reply_clean, current_round, reply_to=ctx_ids if prev_round_replies else None)
+                            log_info(f"[大脑] {ai['name']} 第{current_round}轮发言 ({len(reply_clean)}字) → msg#{msg_id}")
                             if progress_callback:
                                 progress_callback("ai_reply", ai["name"], f"[第{current_round}轮] {reply_clean}")
                                 progress_callback("status", "系统", f"✅ 第{current_round}轮：{ai['name']} 已回复 ({done_count}/{total})")

@@ -18,7 +18,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from browser import ChromeManager
 from core import HostedMode
-from logger import log_info, log_error, log_warning, log_exception
+from logger import log_info, log_error, log_warning, log_exception, log_ai, log_ui
 
 
 # ======================================================================
@@ -60,7 +60,8 @@ class AIWorker:
                 return
 
             await self.brain_queue.put(("page_opened", self.name, ""))
-            log_info(f"[AIWorker:{self.name}] 页面已打开")
+            log_ai(self.name, f"AIWorker 启动, 打开页面: {url}")
+            log_info(f"[大脑] AIWorker 启动: {self.name}")
 
             # 主循环：监控 + 命令处理
             while self._running:
@@ -142,7 +143,10 @@ class AIWorker:
                 self.chrome_mgr.check_ai_ready(self.page, self.config),
                 timeout=15
             )
-            log_info(f"[AIWorker:{self.name}] 检测结果: {status} ({reason})")
+            # 只在状态变化时记录日志（减少噪音）
+            if status != self._last_status:
+                log_ai(self.name, f"状态变更: {self._last_status}→{status} ({reason})")
+            log_ai(self.name, f"检测: {status} ({reason})", "debug")
 
             # 2. 如果已就绪（绿色），后台尝试启用思考模式（不影响绿色状态）
             if status == "green":
@@ -352,12 +356,14 @@ class WorkerThread(QThread):
         try:
             success, msg = await self._chrome_mgr.start_chrome_debug_async()
             if success:
+                log_info(f"[大脑] Chrome 启动成功: {msg}")
                 self.status_msg.emit(msg, 3000)
                 self.chrome_started_signal.emit()
 
                 # 启动大脑调度循环
                 if self._brain_task is None:
                     self._brain_task = asyncio.ensure_future(self._brain_loop())
+                    log_info("[大脑] 大脑调度循环已启动")
 
                 # 为每个中军帐AI创建 AIWorker
                 platforms = self.config_mgr.get_ai_platforms()
@@ -366,6 +372,7 @@ class WorkerThread(QThread):
                     if p.get("name") in active_set and p.get("name") not in self._ai_workers:
                         await self._create_ai_worker(p)
             else:
+                log_error(f"[大脑] Chrome 启动失败: {msg}")
                 self.toast.emit(msg)
         except Exception as e:
             log_exception("Chrome 启动异常", type(e), e, e.__traceback__)
@@ -437,6 +444,7 @@ class WorkerThread(QThread):
         if report_type == "status":
             color = report[2]
             msg = report[3]
+            log_info(f"[大脑] 收到 {name} 状态报告: {color} ({msg})")
             self.ai_status.emit(name, color, msg)
 
         elif report_type == "page_opened":

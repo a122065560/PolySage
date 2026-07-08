@@ -17,7 +17,7 @@ from typing import Optional
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
 from utils import clean_text
-from logger import log_info, log_error, log_exception, log_warning
+from logger import log_info, log_error, log_exception, log_warning, log_ai
 
 
 # ======================================================================
@@ -2659,11 +2659,11 @@ class ChromeManager:
         has_auth_token = result.get("has_auth_token", False)
         has_user_element = result.get("has_user_element", False)
 
-        # 调试日志：输出检测结果
+        # 调试日志：输出检测结果到对应AI的日志文件
         ai_name = ai_config.get("name", "未知")
-        log_info(f"[登录检测] {ai_name}: login_button={has_login_button}({result.get('login_btn_text','')}), "
-                 f"token={has_auth_token}({result.get('auth_key','')}), "
-                 f"user_element={has_user_element}")
+        log_ai(ai_name, f"登录检测: login_btn={has_login_button}({result.get('login_btn_text','')}), "
+                         f"token={has_auth_token}({result.get('auth_key','')}), "
+                         f"user_el={has_user_element}", "debug")
 
         # 1. 有登录按钮 → 未登录（否定优先，覆盖一切）
         if has_login_button:

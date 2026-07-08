@@ -53,7 +53,11 @@ from core import HostedMode
 from utils import read_uploaded_file, clean_text, resource_path
 from ui_widgets import ChatStream, AIPlatformItem
 from ui_worker import WorkerThread
-from logger import delete_logs, delete_error_logs, delete_all_logs, get_log_files, get_error_log_files, get_log_dir, log_info, log_error, log_warning, log_exception
+from logger import (
+    delete_all_logs, get_log_dir, log_info, log_error, log_warning, log_exception,
+    get_date_dirs, get_files_by_date, get_total_size, delete_file,
+    log_ui, COMPONENT_UI, COMPONENT_BRAIN
+)
 
 
 # ======================================================================
@@ -148,92 +152,76 @@ class SettingsDialog(QDialog):
 
         grid.addWidget(platform_group, 0, 0)
 
-        # --- 中上：日志管理 ---
+        # --- 中上+右上：日志管理（合并2列） ---
         log_group = QGroupBox("📋 日志管理")
         log_layout = QVBoxLayout(log_group)
 
+        # 统计信息
         self._log_info_label = QLabel()
         self._refresh_log_info()
         self._log_info_label.setWordWrap(True)
         log_layout.addWidget(self._log_info_label)
 
-        # 日志列表下拉
-        self.log_combo = QComboBox()
-        self.log_combo.setMinimumWidth(220)
-        self._refresh_log_combo()
-        log_layout.addWidget(self.log_combo)
+        # 日期选择
+        date_row = QHBoxLayout()
+        date_label = QLabel("📅 日期:")
+        date_label.setStyleSheet("font-size: 12px; color: #6B7280;")
+        self._log_date_combo = QComboBox()
+        self._log_date_combo.setMinimumWidth(160)
+        self._refresh_log_dates()
+        self._log_date_combo.currentTextChanged.connect(self._refresh_log_files)
+        date_row.addWidget(date_label)
+        date_row.addWidget(self._log_date_combo)
+        date_row.addStretch()
+        log_layout.addLayout(date_row)
 
-        # 展开日志按钮
+        # 文件列表（树形）
+        from PyQt6.QtWidgets import QTreeWidget, QTreeWidgetItem
+        self._log_tree = QTreeWidget()
+        self._log_tree.setHeaderLabels(["文件名", "大小", ""])
+        self._log_tree.setColumnWidth(0, 300)
+        self._log_tree.setColumnWidth(1, 80)
+        self._log_tree.setColumnWidth(2, 50)
+        self._log_tree.setRootIsDecorated(True)
+        self._log_tree.setUniformRowHeights(True)
+        self._log_tree.itemDoubleClicked.connect(self._on_log_item_double_clicked)
+        self._log_tree.setMouseTracking(True)
+        self._log_tree.setStyleSheet("""
+            QTreeWidget {
+                border: 1px solid #E5E7EB;
+                border-radius: 4px;
+                font-size: 12px;
+            }
+            QTreeWidget::item {
+                padding: 3px 6px;
+            }
+            QTreeWidget::item:hover {
+                background-color: #F3F4F6;
+            }
+        """)
+        log_layout.addWidget(self._log_tree)
+        self._refresh_log_files()
+
+        # 双击提示
+        hint_label = QLabel("💡 双击文件查看内容")
+        hint_label.setStyleSheet("font-size: 11px; color: #9CA3AF;")
+        log_layout.addWidget(hint_label)
+
+        # 底部按钮
         log_btn_row = QHBoxLayout()
-        self.view_log_btn = QPushButton("👁 展开日志")
-        self.view_log_btn.setObjectName("primary")
-        self.open_log_btn = QPushButton("打开日志目录")
+        self.open_log_btn = QPushButton("📂 打开日志目录")
         self.open_log_btn.setObjectName("secondary")
-        log_btn_row.addWidget(self.view_log_btn)
+        self.delete_all_log_btn = QPushButton("🗑 清空全部日志")
+        self.delete_all_log_btn.setObjectName("danger")
         log_btn_row.addWidget(self.open_log_btn)
         log_btn_row.addStretch()
+        log_btn_row.addWidget(self.delete_all_log_btn)
         log_layout.addLayout(log_btn_row)
 
-        # 删除日志按钮
-        log_del_row = QHBoxLayout()
-        del_title = QLabel("删除：")
-        del_title.setStyleSheet("font-size: 12px; color: #6B7280;")
-        self.delete_log_btn = QPushButton("普通日志")
-        self.delete_log_btn.setObjectName("danger_ghost")
-        self.delete_all_log_btn = QPushButton("🗑 全部删除")
-        self.delete_all_log_btn.setObjectName("danger")
-        log_del_row.addWidget(del_title)
-        log_del_row.addWidget(self.delete_log_btn)
-        log_del_row.addWidget(self.delete_all_log_btn)
-        log_del_row.addStretch()
-        log_layout.addLayout(log_del_row)
-
-        log_layout.addStretch()
-
-        self.view_log_btn.clicked.connect(self._on_view_log)
-        self.delete_log_btn.clicked.connect(lambda: self._on_delete_logs("normal"))
-        self.delete_all_log_btn.clicked.connect(lambda: self._on_delete_logs("all"))
         self.open_log_btn.clicked.connect(self._on_open_log_dir)
+        self.delete_all_log_btn.clicked.connect(self._on_delete_all_logs)
 
-        grid.addWidget(log_group, 0, 1)
-
-        # --- 右上：异常日志 ---
-        err_log_group = QGroupBox("🔴 异常日志")
-        err_log_layout = QVBoxLayout(err_log_group)
-
-        self._err_log_info_label = QLabel()
-        self._refresh_err_log_info()
-        self._err_log_info_label.setWordWrap(True)
-        err_log_layout.addWidget(self._err_log_info_label)
-
-        self.err_log_combo = QComboBox()
-        self.err_log_combo.setMinimumWidth(220)
-        self._refresh_err_log_combo()
-        err_log_layout.addWidget(self.err_log_combo)
-
-        err_btn_row = QHBoxLayout()
-        self.view_err_log_btn = QPushButton("👁 展开异常日志")
-        self.view_err_log_btn.setObjectName("danger")
-        err_btn_row.addWidget(self.view_err_log_btn)
-        err_btn_row.addStretch()
-        err_log_layout.addLayout(err_btn_row)
-
-        err_del_row = QHBoxLayout()
-        err_del_title = QLabel("删除：")
-        err_del_title.setStyleSheet("font-size: 12px; color: #6B7280;")
-        self.delete_err_log_btn = QPushButton("异常日志")
-        self.delete_err_log_btn.setObjectName("danger_ghost")
-        err_del_row.addWidget(err_del_title)
-        err_del_row.addWidget(self.delete_err_log_btn)
-        err_del_row.addStretch()
-        err_log_layout.addLayout(err_del_row)
-
-        err_log_layout.addStretch()
-
-        self.view_err_log_btn.clicked.connect(self._on_view_err_log)
-        self.delete_err_log_btn.clicked.connect(lambda: self._on_delete_logs("error"))
-
-        grid.addWidget(err_log_group, 0, 2)
+        grid.addWidget(log_group, 0, 1, 1, 2)  # 跨2列
 
         # ==================== 第二行：讨论参数 | 开场白 | LMStudio ====================
 
@@ -523,118 +511,121 @@ class SettingsDialog(QDialog):
         self._show_toast(f"已恢复所有默认配置（v{DEFAULT_CONFIG_VERSION}），请重启应用生效")
 
     def _refresh_log_info(self):
-        """刷新日志信息展示（普通日志 + 异常日志）。"""
-        normal_files = get_log_files()
-        error_files = get_error_log_files()
-        if not normal_files and not error_files:
+        """刷新日志统计信息。"""
+        total = get_total_size()
+        dates = get_date_dirs()
+        if total == 0 and not dates:
             self._log_info_label.setText("📝 当前无日志文件")
             return
-        normal_size = sum(f.stat().st_size for f in normal_files)
-        error_size = sum(f.stat().st_size for f in error_files)
-        total_size = normal_size + error_size
-        size_str = f"{total_size / 1024:.1f} KB" if total_size < 1024 * 1024 else f"{total_size / 1024 / 1024:.1f} MB"
-        normal_size_str = f"{normal_size / 1024:.1f} KB" if normal_size < 1024 * 1024 else f"{normal_size / 1024 / 1024:.1f} MB"
-        error_size_str = f"{error_size / 1024:.1f} KB" if error_size < 1024 * 1024 else f"{error_size / 1024 / 1024:.1f} MB"
+        size_str = f"{total / 1024:.1f} KB" if total < 1024 * 1024 else f"{total / 1024 / 1024:.1f} MB"
         self._log_info_label.setText(
-            f"📝 普通日志: {len(normal_files)} 个 ({normal_size_str})  |  异常日志: {len(error_files)} 个 ({error_size_str})\n"
-            f"📊 总大小: {size_str}\n"
+            f"📝 日志: {len(dates)} 天  |  📊 总大小: {size_str}\n"
             f"📂 路径: {get_log_dir()}"
         )
 
-    def _refresh_log_combo(self):
-        """刷新普通日志文件下拉列表。"""
-        if not hasattr(self, 'log_combo'):
+    def _refresh_log_dates(self):
+        """刷新日期下拉列表。"""
+        if not hasattr(self, '_log_date_combo'):
             return
-        self.log_combo.clear()
-        normal_files = get_log_files()
-        for f in normal_files:
-            self.log_combo.addItem(f"📋 {f.name}", str(f))
+        self._log_date_combo.clear()
+        dates = get_date_dirs()
+        for d in dates:
+            # 格式化为可读: 20260709 → 2026-07-09
+            readable = f"{d[:4]}-{d[4:6]}-{d[6:]}"
+            self._log_date_combo.addItem(readable, d)
+        if dates:
+            self._log_date_combo.setCurrentIndex(0)
 
-    def _on_view_log(self):
-        """弹窗查看日志内容。"""
-        idx = self.log_combo.currentIndex()
-        if idx < 0:
-            self._show_toast("暂无日志文件。")
+    def _refresh_log_files(self):
+        """根据选中的日期刷新文件列表。"""
+        if not hasattr(self, '_log_tree'):
+            return
+        self._log_tree.clear()
+
+        date_str = self._log_date_combo.currentData()
+        if not date_str:
             return
 
-        log_path = self.log_combo.itemData(idx)
-        log_name = self.log_combo.itemText(idx)
+        files = get_files_by_date(date_str)
+        if not files:
+            return
+
+        from PyQt6.QtWidgets import QTreeWidgetItem
+
+        # 分组
+        op_files = [f for f in files if f["type"] == "操作日志"]
+        disc_files = [f for f in files if f["type"] == "讨论记录"]
+
+        # 操作日志组
+        if op_files:
+            op_root = QTreeWidgetItem(["📁 操作日志", "", ""])
+            for f in op_files:
+                size_str = self._format_size(f["size"])
+                child = QTreeWidgetItem([f["name"], size_str, "🗑"])
+                child.setData(0, 0x0100, str(f["path"]))  # 存储文件路径
+                op_root.addChild(child)
+            self._log_tree.addTopLevelItem(op_root)
+            op_root.setExpanded(True)
+
+        # 讨论记录组
+        if disc_files:
+            disc_root = QTreeWidgetItem(["💬 讨论记录", "", ""])
+            for f in disc_files:
+                size_str = self._format_size(f["size"])
+                child = QTreeWidgetItem([f["name"], size_str, "🗑"])
+                child.setData(0, 0x0100, str(f["path"]))
+                disc_root.addChild(child)
+            self._log_tree.addTopLevelItem(disc_root)
+            disc_root.setExpanded(True)
+
+    @staticmethod
+    def _format_size(size: int) -> str:
+        """格式化文件大小。"""
+        if size < 1024:
+            return f"{size} B"
+        elif size < 1024 * 1024:
+            return f"{size / 1024:.1f} KB"
+        else:
+            return f"{size / 1024 / 1024:.1f} MB"
+
+    def _on_log_item_double_clicked(self, item, column):
+        """双击文件查看内容。"""
+        # 只处理子节点（文件），不处理分组节点
+        filepath = item.data(0, 0x0100)
+        if not filepath:
+            return
+
         try:
-            with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+            with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
                 content = f.read()
         except Exception as e:
-            self._show_toast(f"读取日志失败: {e}")
+            self._show_toast(f"读取失败: {e}")
             return
 
-        # 弹窗显示
+        # 如果是 JSON 讨论记录，格式化展示
+        if filepath.endswith('.json'):
+            try:
+                import json
+                data = json.loads(content)
+                content = self._format_discussion_json(data)
+                title = f"讨论记录 - {data.get('topic', '未知')[:30]}"
+            except Exception:
+                title = item.text(0)
+        else:
+            title = f"日志 - {item.text(0)}"
+
         dialog = QDialog(self)
-        dialog.setWindowTitle(f"日志查看 - {log_name}")
-        dialog.resize(700, 500)
+        dialog.setWindowTitle(title)
+        dialog.resize(800, 600)
         dialog_layout = QVBoxLayout(dialog)
         dialog_layout.setContentsMargins(4, 4, 4, 4)
 
         viewer = QTextEdit()
         viewer.setReadOnly(True)
-        viewer.setStyleSheet("background-color: #1E1E1E; color: #D4D4D4; font-family: 'Menlo', 'Monaco', monospace; font-size: 12px;")
-        viewer.setPlainText(content)
-        dialog_layout.addWidget(viewer)
-
-        close_btn = QPushButton("关闭")
-        close_btn.clicked.connect(dialog.accept)
-        dialog_layout.addWidget(close_btn)
-
-        dialog.exec()
-
-    def _refresh_err_log_info(self):
-        """刷新异常日志信息展示。"""
-        if not hasattr(self, '_err_log_info_label'):
-            return
-        error_files = get_error_log_files()
-        if not error_files:
-            self._err_log_info_label.setText("✅ 当前无异常日志")
-            return
-        total_size = sum(f.stat().st_size for f in error_files)
-        size_str = f"{total_size / 1024:.1f} KB" if total_size < 1024 * 1024 else f"{total_size / 1024 / 1024:.1f} MB"
-        latest = error_files[0]
-        self._err_log_info_label.setText(
-            f"🔴 异常日志: {len(error_files)} 个 ({size_str})\n"
-            f"📁 最新: {latest.name}"
+        viewer.setStyleSheet(
+            "background-color: #1E1E1E; color: #D4D4D4; "
+            "font-family: 'Menlo', 'Monaco', monospace; font-size: 12px;"
         )
-
-    def _refresh_err_log_combo(self):
-        """刷新异常日志下拉列表。"""
-        if not hasattr(self, 'err_log_combo'):
-            return
-        self.err_log_combo.clear()
-        error_files = get_error_log_files()
-        for f in error_files:
-            self.err_log_combo.addItem(f"🔴 {f.name}", str(f))
-
-    def _on_view_err_log(self):
-        """弹窗查看异常日志内容。"""
-        idx = self.err_log_combo.currentIndex()
-        if idx < 0:
-            self._show_toast("暂无异常日志文件。")
-            return
-
-        log_path = self.err_log_combo.itemData(idx)
-        log_name = self.err_log_combo.itemText(idx)
-        try:
-            with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
-                content = f.read()
-        except Exception as e:
-            self._show_toast(f"读取异常日志失败: {e}")
-            return
-
-        dialog = QDialog(self)
-        dialog.setWindowTitle(f"异常日志 - {log_name}")
-        dialog.resize(700, 500)
-        dialog_layout = QVBoxLayout(dialog)
-        dialog_layout.setContentsMargins(4, 4, 4, 4)
-
-        viewer = QTextEdit()
-        viewer.setReadOnly(True)
-        viewer.setStyleSheet("background-color: #1A0000; color: #FF6B6B; font-family: 'Menlo', 'Monaco', monospace; font-size: 12px;")
         viewer.setPlainText(content)
         dialog_layout.addWidget(viewer)
 
@@ -644,28 +635,50 @@ class SettingsDialog(QDialog):
 
         dialog.exec()
 
-    def _on_delete_logs(self, log_type: str = "normal"):
-        """删除日志文件。
+    @staticmethod
+    def _format_discussion_json(data: dict) -> str:
+        """格式化讨论记录 JSON 为可读文本。"""
+        lines = []
+        lines.append(f"主题: {data.get('topic', '未知')}")
+        lines.append(f"时间: {data.get('start_time', '')} ~ {data.get('end_time', '')}")
+        lines.append(f"参与: {', '.join(data.get('participants', []))}")
+        lines.append("")
 
-        Args:
-            log_type: "normal"=普通日志, "error"=异常日志, "all"=全部
-        """
-        try:
-            if log_type == "normal":
-                count, msg = delete_logs()
-            elif log_type == "error":
-                count, msg = delete_error_logs()
-            else:
-                count, msg = delete_all_logs()
-            log_info(f"用户删除了 {count} 个日志文件 (类型={log_type})")
-            self._refresh_log_info()
-            self._refresh_log_combo()
-            self._refresh_err_log_info()
-            self._refresh_err_log_combo()
-            self._show_toast(msg)
-        except Exception as e:
-            log_error(f"删除日志失败: {e}")
-            self._show_toast(f"删除日志失败: {e}")
+        current_round = 0
+        for msg in data.get("messages", []):
+            rnd = msg.get("round", 1)
+            if rnd != current_round:
+                current_round = rnd
+                lines.append(f"{'='*20} 第{current_round}轮 {'='*20}")
+            speaker = msg.get("speaker", "?")
+            ts = msg.get("timestamp", "")
+            content = msg.get("content", "")
+            ctx = msg.get("context_received")
+            ctx_str = f" (引用: {ctx})" if ctx else ""
+            lines.append(f"\n[{speaker}] {ts}{ctx_str}")
+            lines.append(content)
+            lines.append("")
+
+        return "\n".join(lines)
+
+    def _on_delete_all_logs(self):
+        """清空全部日志（需确认）。"""
+        from PyQt6.QtWidgets import QMessageBox
+        reply = QMessageBox.question(
+            self, "确认清空",
+            "确定要清空所有日志文件吗？\n\n此操作不可撤销，所有操作日志和讨论记录将被删除。\n下次运行时自动重建。",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        count, msg = delete_all_logs()
+        log_ui(f"用户清空了全部日志 ({count} 个文件)")
+        self._refresh_log_info()
+        self._refresh_log_dates()
+        self._refresh_log_files()
+        self._show_toast(msg)
 
     def _on_open_log_dir(self):
         """在 Finder 中打开日志目录。"""
@@ -675,7 +688,7 @@ class SettingsDialog(QDialog):
         log_dir.mkdir(parents=True, exist_ok=True)
         try:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(log_dir)))
-            log_info(f"打开日志目录: {log_dir}")
+            log_ui("用户打开日志目录")
         except Exception as e:
             log_error(f"打开日志目录失败: {e}")
             self._show_toast(f"无法打开日志目录: {e}")
@@ -1288,7 +1301,7 @@ class HostedModeTab(QWidget):
 
     def _on_start(self):
         """开始讨论（兼容左侧栏按钮调用）。"""
-        log_info("用户点击「开始讨论」按钮")
+        log_ui("用户点击「开始讨论」按钮")
         text = self.message_edit.toPlainText().strip()
         if not text:
             self.main_window._show_toast("请输入消息开始讨论。")
@@ -2260,7 +2273,7 @@ class MainWindow(QMainWindow):
 
     def _on_start_chrome(self):
         """启动 Chrome（只发命令给工作线程，不阻塞 UI）。"""
-        log_info("用户点击「启动 Chrome」")
+        log_ui("用户点击「启动 Chrome」")
         self._ai_state_cache.clear()
         self.worker.do_start_chrome(list(self.active_ais))
 
@@ -2268,6 +2281,7 @@ class MainWindow(QMainWindow):
 
     def _on_stop_chrome(self):
         """关闭 Chrome — 主线程只发命令，大脑线程执行。"""
+        log_ui("用户点击「关闭 Chrome」")
         self._chrome_stopping = True
         self._start_in_progress = False
         self._discussion_running = False
