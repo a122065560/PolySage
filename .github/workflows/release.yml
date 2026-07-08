@@ -60,22 +60,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r roundtableai/requirements.txt pyinstaller==6.3.0
 
-      # 5. 安装 Playwright Chrome 浏览器
-      - name: 安装 Playwright Chrome
-        run: playwright install chrome
+      # 5. 安装 Playwright Chromium 浏览器
+      #    注：GitHub Actions macOS runner 上 `playwright install chrome` 可能因
+      #    Chrome DMG 挂载失败而报错，改用 chromium 更稳定
+      - name: 安装 Playwright Chromium
+        run: playwright install chromium
 
       # 6. PyInstaller 打包 macOS .app
-      #    注：使用 spec 文件时，命令行 --icon/--name 等参数由 spec 内部配置决定
+      #    注：使用 spec 文件时不能传 --name/--windowed 等参数，由 spec 内部决定
       - name: PyInstaller 打包
         working-directory: roundtableai
-        run: |
-          pyinstaller --noconfirm \
-            --target-arch arm64 \
-            --windowed \
-            --osx-bundle-identifier com.polysage.app \
-            --icon AppIcon.icns \
-            --name PolySage \
-            RoundTableAI.spec
+        run: pyinstaller --noconfirm RoundTableAI.spec
 
       # 7. 对 .app 进行 ad-hoc 签名（无需开发者证书）
       - name: 代码签名 (ad-hoc)
@@ -151,16 +146,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r roundtableai/requirements.txt pyinstaller==6.3.0
 
-      # 5. 安装 Playwright Chrome 浏览器
-      - name: 安装 Playwright Chrome
-        run: playwright install chrome
+      # 5. 安装 Playwright Chromium 浏览器
+      - name: 安装 Playwright Chromium
+        run: playwright install chromium
 
       # 6. PyInstaller 打包 Windows 可执行文件
       #    注：spec 文件中的 BUNDLE 仅为 macOS 生成 .app，Windows 下自动跳过
+      #    使用 spec 文件时不能传 --name/--windowed 等参数
       - name: PyInstaller 打包
         working-directory: roundtableai
-        run: |
-          pyinstaller --noconfirm --windowed --name PolySage RoundTableAI.spec
+        run: pyinstaller --noconfirm RoundTableAI.spec
 
       # 7. 将 Inno Setup 加入 PATH（GitHub windows-latest 已预装）
       - name: 配置 Inno Setup
