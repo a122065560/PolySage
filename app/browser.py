@@ -2514,33 +2514,34 @@ class ChromeManager:
             indicator_el = await self._try_locate(page, login_indicator, state="attached", timeout=1500)
             if indicator_el is not None:
                 return "logged_in", "已登录（输入框可用+登录指示器存在）"
-            # 登录指示器未找到，但二次确认：确保没有登录按钮
+            # 登录指示器未找到 → 判定为未登录（不再推测）
+            # 二次确认：检测是否有登录按钮
             login_btn_selector = selectors.get("login_button", "button:has-text('登录')")
             login_btn = await self._try_locate(page, login_btn_selector, state="visible", timeout=500)
             if login_btn is not None:
                 return "not_logged_in", "检测到登录按钮，请先登录。"
-            # 输入框可用且无登录按钮 → 推测已登录（选择器可能过时）
-            if input_ok:
-                return "logged_in", "输入框可用且无登录按钮，推测已登录。"
+            # 无登录按钮但也无登录指示器 → 未登录（可能是游客模式或选择器过时）
+            return "not_logged_in", "未检测到登录指示器，可能未登录（游客模式）"
         else:
-            # 未配置登录指示器 → 仅凭输入框可用判断（兼容旧配置）
+            # 未配置登录指示器 → 不能确认已登录，判定为未登录
             if input_ok:
-                return "logged_in", "输入框可用，推测已登录。"
+                return "not_logged_in", "未配置登录指示器，无法确认登录状态"
 
         return "unknown", "无法确定登录状态，请手动确认。"
 
     # ------------------------------------------------------------------
-    # 统一状态检测：对话框 + 登录 + 思考模式
+    # 统一状态检测：对话框 + 登录（思考模式不作为变绿标准）
     # 检测与操作完全分离：检测只读取状态，操作才执行点击
     # ------------------------------------------------------------------
 
     async def check_ai_ready(self, page: Page, ai_config: dict) -> tuple:
         """统一检测 AI 是否就绪（检测 ONLY，不操作）。
 
-        检测三个条件：
+        检测两个条件（必须同时满足才变绿）：
         1. 对话框存在（输入框可见）
-        2. 已登录（check_login_status）
-        3. 思考模式已开启（DeepSeek 跳过）
+        2. 已登录（check_login_status 严格确认）
+
+        思考模式不作为变绿标准，但仍由 ui_worker 自动尝试启用。
 
         Returns:
             tuple: (status, reason)
@@ -2556,18 +2557,12 @@ class ChromeManager:
         if input_el is None:
             return "orange", "无对话框（页面未加载或需登录）"
 
-        # 2. 检测登录状态
+        # 2. 检测登录状态（必须严格确认已登录）
         login_status, login_msg = await self.check_login_status(page, ai_config)
         if login_status != "logged_in":
             return "orange", f"未登录（{login_msg}）"
 
-        # 3. 检测思考模式（DeepSeek 跳过）
-        tm = ai_config.get("thinking_mode", {})
-        if tm.get("enabled", False):
-            is_active, detect_reason = await self.detect_thinking_mode(page, ai_config)
-            if not is_active:
-                return "orange", f"未打开思考模式（{detect_reason}）"
-
+        # 两个条件都满足 → 变绿
         return "green", "已就绪"
 
     # ------------------------------------------------------------------

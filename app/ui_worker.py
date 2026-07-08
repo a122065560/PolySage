@@ -137,33 +137,30 @@ class AIWorker:
                 return
 
         try:
-            # 1. 统一检测（只读，不操作）
+            # 1. 统一检测（只读，不操作）—— 只检测对话框+登录，不检测思考模式
             status, reason = await asyncio.wait_for(
                 self.chrome_mgr.check_ai_ready(self.page, self.config),
                 timeout=15
             )
 
-            # 2. 如果橙色且原因是思考模式 → 尝试自动启用
-            if status == "orange" and "思考模式" in reason:
+            # 2. 如果已就绪（绿色），后台尝试启用思考模式（不影响绿色状态）
+            if status == "green":
                 tm = self.config.get("thinking_mode", {})
                 if tm.get("enabled", False):
-                    # 尝试启用（操作）
-                    enable_ok, enable_msg = await asyncio.wait_for(
-                        self.chrome_mgr.try_enable_thinking_mode(self.page, self.config),
-                        timeout=10
-                    )
-                    if enable_ok:
-                        # 操作后重新检测（确认是否成功）
-                        await asyncio.sleep(1)
-                        is_active, detect_reason = await asyncio.wait_for(
+                    # 后台尝试启用思考模式（操作），失败不影响绿色状态
+                    try:
+                        is_active, _ = await asyncio.wait_for(
                             self.chrome_mgr.detect_thinking_mode(self.page, self.config),
                             timeout=8
                         )
-                        if is_active:
-                            status = "green"
-                            reason = "已就绪"
-                        else:
-                            reason = f"未打开思考模式（自动切换失败，请手动开启）"
+                        if not is_active:
+                            # 尝试启用（操作）
+                            await asyncio.wait_for(
+                                self.chrome_mgr.try_enable_thinking_mode(self.page, self.config),
+                                timeout=10
+                            )
+                    except Exception:
+                        pass  # 思考模式启用失败不影响就绪状态
 
             # 3. 报告状态
             self._last_status = status

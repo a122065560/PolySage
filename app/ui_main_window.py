@@ -1609,15 +1609,15 @@ class MainWindow(QMainWindow):
         # 同步更新中军帐内 AI 芯片的框体颜色（含军师）
         chip = self._ai_chips.get(ai_name)
         if chip is not None:
-            # 更新 tooltip 显示状态原因（橙色时显示具体原因）
+            # 更新 tooltip：橙色只显示原因，绿色才显示操作提示
             msg = cached.get("msg", "未知")
             color = cached.get("color", "orange")
             is_arb = (ai_name == self._arbitrator)
-            arb_hint = " | 右键设为军师" if not is_arb else " | 当前军师"
             if color == "green":
-                chip.setToolTip(f"✅ {msg}{arb_hint}（左键移出讨论）")
+                arb_hint = " | 右键设为军师" if not is_arb else " | 当前军师"
+                chip.setToolTip(f"✅ 已就绪{arb_hint}（左键移出讨论）")
             else:
-                chip.setToolTip(f"⚠️ {msg}{arb_hint}（左键移出讨论）")
+                chip.setToolTip(f"⚠️ {msg}")
             is_green = (cached["color"] == "green")
             if is_arb:
                 if is_green:
@@ -2161,10 +2161,9 @@ class MainWindow(QMainWindow):
                 }
             """)
             chip.setCursor(Qt.CursorShape.PointingHandCursor)
-            # tooltip 显示状态消息（初始，后续由 _update_ai_icon 动态更新）
+            # tooltip 初始显示（后续由 _update_ai_icon 动态更新）
             msg = self._get_ai_status_msg(name)
-            arb_hint = " | 右键设为军师" if not is_arb else " | 当前军师"
-            chip.setToolTip(f"⚠️ {msg}{arb_hint}（左键移出讨论）")
+            chip.setToolTip(f"⚠️ {msg}")
 
             # 鼠标点击事件：左键移出，右键设为军师
             def _chip_mouse_press(event, n=name):
