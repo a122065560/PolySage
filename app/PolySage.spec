@@ -40,9 +40,6 @@ a = Analysis(
 pyz = PYZ(a.pure)
 
 exe_kwargs = dict(
-    pyz=pyz,
-    a.scripts,
-    [],
     exclude_binaries=True,
     name='PolySage',
     debug=False,
@@ -62,7 +59,7 @@ if IS_MACOS:
 elif IS_WINDOWS:
     if os.path.exists('AppIcon.ico'):
         exe_kwargs['icon'] = ['AppIcon.ico']
-exe = EXE(**exe_kwargs)
+exe = EXE(pyz, a.scripts, [], **exe_kwargs)
 
 coll = COLLECT(
     exe,
