@@ -173,12 +173,17 @@ echo -e "${GREEN}  ✅ .app 打包成功${NC}"
 echo ""
 
 # ----------------------------------------------------------------
-# Step 4: 复制 Qt6 framework 和 Playwright driver
+# Step 4: 优化 Frameworks（去重 + 清理多余 Qt6 framework）
+# PyInstaller --windowed 已把所有依赖放到 Contents/Frameworks/，
+# 无需再从 COLLECT 目录复制 _internal（旧逻辑导致依赖两份重复，+300MB）
 # ----------------------------------------------------------------
-echo -e "${YELLOW}[4/7] 嵌入 Qt6 和 Playwright driver...${NC}"
+echo -e "${YELLOW}[4/7] 优化 Qt6 framework 和 Playwright driver...${NC}"
 
-# 找到 PyQt6 的 Qt6 库路径
-# 注意：用 2>&1 捕获错误信息，并用 || 防止 set -e 在 python3 失败时退出
+APP_BUNDLE="$DIST_DIR/聚慧.app"
+APP_FW="$APP_BUNDLE/Contents/Frameworks"
+APP_QT6LIB="$APP_FW/PyQt6/Qt6/lib"
+
+# 找到 PyQt6 的 Qt6 库路径（源）
 QT6_LIB=$(python3 -c "
 import PyQt6, os
 qt6_dir = os.path.join(os.path.dirname(PyQt6.__file__), 'Qt6', 'lib')
@@ -187,53 +192,41 @@ print(qt6_dir)
 
 if [ -n "$QT6_LIB" ] && [ -d "$QT6_LIB" ]; then
     echo "  QT6_LIB=$QT6_LIB"
-    # 清理 PyInstaller --collect-binaries 已创建的不完整 Qt6/lib，避免 cp 冲突
-    rm -rf "$DIST_DIR/聚慧/_internal/PyQt6/Qt6/lib"
-    mkdir -p "$DIST_DIR/聚慧/_internal/PyQt6/Qt6/lib"
-    # 只复制实际使用的4个Qt6框架（而非全部85个），节省约400MB
+    # PyInstaller --collect-binaries 已把全部52个 Qt6 framework 放到 Frameworks/PyQt6/Qt6/lib
+    # 但 PyInstaller 复制的 framework 可能有断裂符号链接，从源重新复制4个实际使用的 framework
     for fw in QtCore QtGui QtWidgets QtDBus; do
-        if [ -d "$QT6_LIB/$fw.framework" ]; then
-            cp -R "$QT6_LIB/$fw.framework" "$DIST_DIR/聚慧/_internal/PyQt6/Qt6/lib/"
-            echo "  复制 Qt6/$fw framework ✓"
-        else
-            echo "  ⚠️ 未找到 $QT6_LIB/$fw.framework"
-        fi
+        rm -rf "$APP_QT6LIB/$fw.framework"
+        cp -R "$QT6_LIB/$fw.framework" "$APP_QT6LIB/"
+        echo "  修复 Qt6/$fw framework ✓"
     done
-    echo -e "${GREEN}  ✅ Qt6 framework 已嵌入（仅 QtCore/QtGui/QtWidgets/QtDBus）${NC}"
+    # 删除多余 Qt6 framework（只保留4个，删除其余48个，节省约50MB）
+    for fw_dir in "$APP_QT6LIB"/*.framework; do
+        fw_name=$(basename "$fw_dir" .framework)
+        case "$fw_name" in
+            QtCore|QtGui|QtWidgets|QtDBus) ;;
+            *) rm -rf "$fw_dir" ;;
+        esac
+    done
+    echo -e "${GREEN}  ✅ Qt6 framework 已优化（仅保留 QtCore/QtGui/QtWidgets/QtDBus）${NC}"
 else
     echo -e "${YELLOW}  ⚠️  Qt6 库未找到 (QT6_LIB='$QT6_LIB')${NC}"
 fi
 
-# 找到 Playwright driver
-PW_DRIVER=$(python3 -c "
-import playwright, os
-print(os.path.join(os.path.dirname(playwright.__file__), 'driver'))
-" 2>/dev/null)
+# Playwright driver 已由 PyInstaller --collect-all 正确放到 Frameworks/playwright/driver
+# 无需额外复制（旧逻辑 cp -r 到 _internal 会导致 driver/driver 嵌套重复 +99MB）
+echo -e "${GREEN}  ✅ Playwright driver 已就绪（PyInstaller 自动放置）${NC}"
 
-if [ -n "$PW_DRIVER" ] && [ -d "$PW_DRIVER" ]; then
-    mkdir -p "$DIST_DIR/聚慧/_internal/playwright"
-    cp -r "$PW_DRIVER" "$DIST_DIR/聚慧/_internal/playwright/driver"
-    echo -e "${GREEN}  ✅ Playwright driver 已嵌入${NC}"
-else
-    echo -e "${YELLOW}  ⚠️  Playwright driver 未找到${NC}"
-fi
-
-# 清理因只保留3个Qt6框架而产生的断裂符号链接
-# PyInstaller 在 _internal/ 下创建了指向所有Qt6框架的符号链接（如 QtWebSockets -> PyQt6/Qt6/lib/QtWebSockets.framework/...）
-# 删除 Qt6/lib 后只保留3个框架，其余符号链接已断裂，需清理
-find "$DIST_DIR/聚慧/_internal" -type l ! -exec test -e {} \; -delete 2>/dev/null || true
+# 清理 PyInstaller 创建的断裂符号链接（指向已删除 framework 的链接）
+find "$APP_FW" -type l ! -exec test -e {} \; -delete 2>/dev/null || true
 echo -e "${GREEN}  ✅ 已清理断裂符号链接${NC}"
 
-# 同步 _internal 到 .app（用 -R 保留符号链接，不跟随）
-rm -rf "$DIST_DIR/聚慧.app/Contents/Resources/_internal"
-cp -R "$DIST_DIR/聚慧/_internal" "$DIST_DIR/聚慧.app/Contents/Resources/_internal"
+# 删除 COLLECT 目录残留（PyInstaller 生成的 dist/聚慧/，与 .app 内容重复，占305MB）
+rm -rf "$DIST_DIR/聚慧"
 
-# 更新 Info.plist
-cp "$SCRIPT_DIR/Info.plist" "$DIST_DIR/聚慧.app/Contents/Info.plist"
-
-# 复制应用图标
+# 更新 Info.plist 和应用图标
+cp "$SCRIPT_DIR/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 if [ -f "$SCRIPT_DIR/AppIcon.icns" ]; then
-    cp "$SCRIPT_DIR/AppIcon.icns" "$DIST_DIR/聚慧.app/Contents/Resources/AppIcon.icns"
+    cp "$SCRIPT_DIR/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
     echo -e "${GREEN}  ✅ 应用图标已嵌入${NC}"
 else
     echo -e "${YELLOW}  ⚠️  AppIcon.icns 未找到${NC}"
@@ -241,16 +234,12 @@ fi
 
 # ----------------------------------------------------------------
 # 关键修复：创建 Qt6 framework 符号链接
-# .so 文件依赖 @rpath/QtXxx（纯名称），需创建符号链接指向 framework
+# .so 文件依赖 @rpath/QtXxx（纯名称），rpath = @loader_path/..（即 Frameworks/）
+# 需创建符号链接指向 Frameworks 内的 framework
 # ----------------------------------------------------------------
-APP_BUNDLE="$DIST_DIR/聚慧.app"
-APP_QT6LIB="$APP_BUNDLE/Contents/Resources/_internal/PyQt6/Qt6/lib"
-APP_FW="$APP_BUNDLE/Contents/Frameworks"
-
 echo -e "${BLUE}  创建 Qt6 framework 符号链接...${NC}"
 
 # 1. 在 Qt6/lib 目录创建符号链接 (QtXxx -> QtXxx.framework/Versions/A/QtXxx)
-#    供可执行文件的 rpath @executable_path/../Resources/_internal/PyQt6/Qt6/lib 使用
 cd "$APP_QT6LIB"
 symlink_count=0
 for fw_dir in *.framework; do
@@ -262,21 +251,18 @@ for fw_dir in *.framework; do
 done
 echo -e "${GREEN}  ✅ Qt6/lib 目录创建 $symlink_count 个符号链接${NC}"
 
-# 2. 在 Frameworks/ 目录创建符号链接 (QtXxx -> ../Resources/_internal/PyQt6/Qt6/lib/QtXxx.framework/Versions/A/QtXxx)
-#    供 .so 文件的 rpath @loader_path/.. 使用
-#    注意：相对路径是 ../Resources/（一层 ..），不是 ../../Resources/（两层 ..）
+# 2. 在 Frameworks/ 目录创建符号链接 (QtXxx -> PyQt6/Qt6/lib/QtXxx.framework/Versions/A/QtXxx)
+#    供 .so 文件的 rpath @loader_path/.. 使用（从 Frameworks/PyQt6/ 出发，.. = Frameworks/）
 cd "$APP_FW"
-# 先清理可能存在的旧符号链接
 for f in Qt*; do
     [ -L "$f" ] && rm "$f"
 done
-# 创建正确的符号链接
 fw_count=0
 for fw_dir in "$APP_QT6LIB"/*.framework; do
     fw_basename=$(basename "$fw_dir")
     fw_name="${fw_basename%.framework}"
     if [ -f "$fw_dir/Versions/A/$fw_name" ]; then
-        ln -sf "../Resources/_internal/PyQt6/Qt6/lib/${fw_basename}/Versions/A/${fw_name}" "$fw_name"
+        ln -sf "PyQt6/Qt6/lib/${fw_basename}/Versions/A/${fw_name}" "$fw_name"
         fw_count=$((fw_count + 1))
     fi
 done
@@ -284,6 +270,12 @@ echo -e "${GREEN}  ✅ Frameworks/ 目录创建 $fw_count 个符号链接${NC}"
 
 # 3. 复制 qt.conf 到 Resources/
 cp "$SCRIPT_DIR/qt.conf" "$APP_BUNDLE/Contents/Resources/qt.conf" 2>/dev/null || true
+
+# 4. 创建 _internal 符号链接指向 ../Frameworks
+#    PyInstaller 的 PyQt6 runtime hook 通过 _internal 路径查找 Qt plugins/libraries
+#    删除实体 _internal 后需创建符号链接重定向到 Frameworks（避免 +300MB 重复）
+ln -sf ../Frameworks "$APP_BUNDLE/Contents/Resources/_internal"
+echo -e "${GREEN}  ✅ _internal 符号链接已创建（→ ../Frameworks）${NC}"
 
 echo -e "${GREEN}  ✅ 资源已同步${NC}"
 echo ""
