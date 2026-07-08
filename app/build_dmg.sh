@@ -56,6 +56,9 @@ echo ""
 # Step 2: 清理旧产物
 # ----------------------------------------------------------------
 echo -e "${YELLOW}[2/7] 清理旧产物...${NC}"
+# 先清除扩展属性和保护标志，防止 macOS 阻止删除
+xattr -cr "$BUILD_DIR" "$DIST_DIR" 2>/dev/null || true
+chflags -R nouchg "$BUILD_DIR" "$DIST_DIR" 2>/dev/null || true
 rm -rf "$BUILD_DIR" "$DIST_DIR"
 rm -rf "$SCRIPT_DIR/__pycache__"
 find "$SCRIPT_DIR" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
