@@ -33,28 +33,24 @@ PrivilegesRequiredOverridesAllowed=dialog
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName=聚慧 PolySage
 
-; 中文界面
-ShowLanguageDialog=no
-LinguisticsFile=compiler:Languages\ChineseSimplified.isl
-
 [Languages]
-Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "在桌面创建快捷方式"; GroupDescription: "附加图标:"; Flags: checkedonce
+Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"
 
 [Files]
 ; PyInstaller 产物目录
-Source: "roundtableai\dist\PolySage\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "app\dist\PolySage\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\卸载 {#MyAppName}"; Filename: "{uninstallexe}"
+Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "立即启动 聚慧 PolySage"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch PolySage"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; 卸载时清理用户数据目录（可选）
-Type: filesandordirs; Name: "{localappdata}\PolySage"; Flags: ignoreversion
+; 卸载时清理用户数据目录
+Type: filesandordirs; Name: "{localappdata}\PolySage"

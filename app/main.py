@@ -17,30 +17,42 @@ import os
 
 # 判断是否在 PyInstaller 打包环境中运行
 if getattr(sys, 'frozen', False):
-    # PyInstaller 打包后的路径
-    _BASE = os.path.dirname(sys.executable)  # Contents/MacOS/
-    _APP_BUNDLE = os.path.dirname(_BASE)       # Contents/
-    _INTERNAL = os.path.join(_APP_BUNDLE, 'Resources', '_internal')
+    if sys.platform == 'darwin':
+        # macOS .app 包结构: Contents/MacOS/PolySage, Contents/Resources/_internal/
+        _BASE = os.path.dirname(sys.executable)  # Contents/MacOS/
+        _APP_BUNDLE = os.path.dirname(_BASE)       # Contents/
+        _INTERNAL = os.path.join(_APP_BUNDLE, 'Resources', '_internal')
 
-    # Qt6 库和插件路径
-    _QT6_LIB = os.path.join(_INTERNAL, 'PyQt6', 'Qt6', 'lib')
-    _QT6_PLUGINS = os.path.join(_INTERNAL, 'PyQt6', 'Qt6', 'plugins')
-    _QT_PLATFORMS = os.path.join(_QT6_PLUGINS, 'platforms')
+        # Qt6 库和插件路径
+        _QT6_LIB = os.path.join(_INTERNAL, 'PyQt6', 'Qt6', 'lib')
+        _QT6_PLUGINS = os.path.join(_INTERNAL, 'PyQt6', 'Qt6', 'plugins')
+        _QT_PLATFORMS = os.path.join(_QT6_PLUGINS, 'platforms')
 
-    # 设置 Qt 环境变量（必须在导入 PyQt6 之前）
-    os.environ['QT_PLUGIN_PATH'] = _QT6_PLUGINS
-    os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = _QT_PLATFORMS
+        # 设置 Qt 环境变量（macOS 需要显式指定）
+        os.environ['QT_PLUGIN_PATH'] = _QT6_PLUGINS
+        os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = _QT_PLATFORMS
 
-    # 设置动态库搜索路径（帮助找到 Qt6 framework）
-    _existing_dyld = os.environ.get('DYLD_FRAMEWORK_PATH', '')
-    os.environ['DYLD_FRAMEWORK_PATH'] = _QT6_LIB + (':' + _existing_dyld if _existing_dyld else '')
+        # 设置动态库搜索路径（帮助找到 Qt6 framework）
+        _existing_dyld = os.environ.get('DYLD_FRAMEWORK_PATH', '')
+        os.environ['DYLD_FRAMEWORK_PATH'] = _QT6_LIB + (':' + _existing_dyld if _existing_dyld else '')
 
-    _existing_lib = os.environ.get('DYLD_LIBRARY_PATH', '')
-    os.environ['DYLD_LIBRARY_PATH'] = _QT6_LIB + (':' + _existing_lib if _existing_lib else '')
+        _existing_lib = os.environ.get('DYLD_LIBRARY_PATH', '')
+        os.environ['DYLD_LIBRARY_PATH'] = _QT6_LIB + (':' + _existing_lib if _existing_lib else '')
 
-    # 确保内部模块路径在 sys.path 中
-    if _INTERNAL not in sys.path:
-        sys.path.insert(0, _INTERNAL)
+        # 确保内部模块路径在 sys.path 中
+        if _INTERNAL not in sys.path:
+            sys.path.insert(0, _INTERNAL)
+    else:
+        # Windows / Linux: PyInstaller onedir 结构
+        # exe 同级有 _internal/ 目录，PyInstaller 会自动设置 sys._MEIPASS
+        # 不需要手动设置 QT_PLUGIN_PATH，PyInstaller 的 hook 会自动处理
+        _BASE = os.path.dirname(sys.executable)
+        _INTERNAL = os.path.join(_BASE, '_internal')
+        _APP_BUNDLE = _BASE  # Windows 没有 .app 包结构
+
+        # 确保 _internal 在 sys.path 中
+        if _INTERNAL not in sys.path:
+            sys.path.insert(0, _INTERNAL)
 
 # 确保当前目录在 Python 路径中（开发模式下）
 if not getattr(sys, 'frozen', False):
@@ -70,7 +82,10 @@ def main():
 
     # 设置应用图标
     if getattr(sys, 'frozen', False):
-        _icon_path = os.path.join(_APP_BUNDLE, 'Resources', 'AppIcon.icns')
+        if sys.platform == 'darwin':
+            _icon_path = os.path.join(_APP_BUNDLE, 'Resources', 'AppIcon.icns')
+        else:
+            _icon_path = os.path.join(_INTERNAL, 'AppIcon.icns')
     else:
         _icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'AppIcon.icns')
     if os.path.exists(_icon_path):

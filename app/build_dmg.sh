@@ -23,7 +23,7 @@ cd "$SCRIPT_DIR"
 
 DIST_DIR="$SCRIPT_DIR/dist"
 BUILD_DIR="$SCRIPT_DIR/build"
-DMG_NAME="PolySage-1.0.0-arm64.dmg"
+DMG_NAME="${DMG_NAME:-PolySage-1.0.0-arm64.dmg}"
 
 # ----------------------------------------------------------------
 # Step 1: 检查依赖
@@ -305,6 +305,10 @@ echo ""
 # ----------------------------------------------------------------
 # Step 8: 触发 Windows .exe 构建（通过 GitHub Actions）
 # ----------------------------------------------------------------
+# CI 环境（GitHub Actions）中跳过此步骤
+if [ -n "$GITHUB_ACTIONS" ]; then
+    echo -e "${BLUE}  [CI 环境] 跳过 Windows 构建触发${NC}"
+else
 echo -e "${YELLOW}[8/8] 构建 Windows .exe 安装包...${NC}"
 
 # 检查是否在 git 仓库中
@@ -381,4 +385,5 @@ else
     echo -e "${YELLOW}  ⚠️  不在 git 仓库中，跳过 Windows 构建${NC}"
     echo -e "${BLUE}  初始化 git 仓库并推送到 GitHub 后可自动构建 Windows .exe${NC}"
 fi
+fi  # 结束 GITHUB_ACTIONS 判断
 echo ""

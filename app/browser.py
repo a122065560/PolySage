@@ -136,18 +136,15 @@ class ChromeManager:
 
     async def start_chrome_debug_async(self) -> tuple:
         """
-        启动 Chrome 调试模式。
+        启动 Chrome 调试模式（跨平台）。
 
-        通过 macOS LaunchAgent 机制，让 launchd（PID 1）启动 Chrome。
-        Chrome 的父进程是 launchd 而非本应用，
-        因此 macOS TCC 不会将 Chrome 的启动归责于本应用，
-        不会触发 App Management 权限提示。
+        macOS: 通过 LaunchAgent 让 launchd 启动 Chrome（避免 TCC 权限提示）
+        Windows/Linux: 直接 subprocess.Popen 启动
 
         Returns:
             tuple: (success: bool, message: str)
         """
         import subprocess
-        import plistlib
 
         chrome_cfg = self.config.get("chrome", {})
         port = chrome_cfg.get("debug_port", 9222)
@@ -167,71 +164,89 @@ class ChromeManager:
         # 确保用户数据目录存在
         os.makedirs(user_data_dir, exist_ok=True)
 
-        # 检测 Chrome 路径
-        chrome_path = self.chrome_path or \
-            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-        if not os.path.isfile(chrome_path):
+        # 检测 Chrome 路径（跨平台）
+        chrome_path = self.chrome_path or detect_chrome_path()
+        if not chrome_path or not os.path.isfile(chrome_path):
             return False, "未找到 Google Chrome，请确认已安装。"
 
-        # 构建 LaunchAgent plist
-        # launchd 作为 PID 1 的系统守护进程，负责启动 Chrome
-        # Chrome 的父进程将是 launchd (PID 1)，而非本应用
-        plist_content = {
-            "Label": self._LAUNCH_AGENT_LABEL,
-            "ProgramArguments": [
-                chrome_path,
-                f"--remote-debugging-port={port}",
-                f"--user-data-dir={user_data_dir}",
-                "--remote-allow-origins=*",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--silent-launch",
-            ],
-            "RunAtLoad": True,
-            "StandardOutPath": "/tmp/rt-chrome-stdout.log",
-            "StandardErrorPath": "/tmp/rt-chrome-stderr.log",
-        }
+        # Chrome 启动参数（通用）
+        chrome_args = [
+            chrome_path,
+            f"--remote-debugging-port={port}",
+            f"--user-data-dir={user_data_dir}",
+            "--remote-allow-origins=*",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--silent-launch",
+        ]
 
-        # 确保 LaunchAgents 目录存在
-        os.makedirs(os.path.dirname(self._LAUNCH_AGENT_PLIST), exist_ok=True)
+        if sys.platform == 'darwin':
+            # macOS: 通过 LaunchAgent 启动（避免 TCC 权限问题）
+            import plistlib
 
-        # 如果有旧的 plist，先 unload
-        if os.path.exists(self._LAUNCH_AGENT_PLIST):
+            plist_content = {
+                "Label": self._LAUNCH_AGENT_LABEL,
+                "ProgramArguments": chrome_args,
+                "RunAtLoad": True,
+                "StandardOutPath": "/tmp/rt-chrome-stdout.log",
+                "StandardErrorPath": "/tmp/rt-chrome-stderr.log",
+            }
+
+            os.makedirs(os.path.dirname(self._LAUNCH_AGENT_PLIST), exist_ok=True)
+
+            # 如果有旧的 plist，先 unload
+            if os.path.exists(self._LAUNCH_AGENT_PLIST):
+                try:
+                    subprocess.run(
+                        ["launchctl", "unload", self._LAUNCH_AGENT_PLIST],
+                        timeout=5, capture_output=True
+                    )
+                except Exception:
+                    pass
+
+            with open(self._LAUNCH_AGENT_PLIST, "wb") as f:
+                plistlib.dump(plist_content, f)
+
+            log_info(f"启动 Chrome (LaunchAgent): 端口 {port}, 数据目录 {user_data_dir}")
+
             try:
                 subprocess.run(
-                    ["launchctl", "unload", self._LAUNCH_AGENT_PLIST],
-                    timeout=5, capture_output=True
+                    ["launchctl", "load", self._LAUNCH_AGENT_PLIST],
+                    check=True, timeout=10, capture_output=True
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                log_exception("Chrome 启动异常", type(e), e, e.__traceback__)
+                return False, f"Chrome 启动失败: {e}"
+        else:
+            # Windows / Linux: 直接启动
+            log_info(f"启动 Chrome: 端口 {port}, 数据目录 {user_data_dir}")
 
-        # 写入 plist
-        with open(self._LAUNCH_AGENT_PLIST, "wb") as f:
-            plistlib.dump(plist_content, f)
-
-        log_info(f"启动 Chrome (LaunchAgent): 端口 {port}, 数据目录 {user_data_dir}")
-
-        try:
-            # 通过 launchctl load 让 launchd 启动 Chrome
-            subprocess.run(
-                ["launchctl", "load", self._LAUNCH_AGENT_PLIST],
-                check=True, timeout=10, capture_output=True
-            )
-        except Exception as e:
-            log_exception("Chrome 启动异常", type(e), e, e.__traceback__)
-            return False, f"Chrome 启动失败: {e}"
+            try:
+                if sys.platform == 'win32':
+                    # Windows: DETACHED_PROCESS 防止父进程退出时连带杀死 Chrome
+                    CREATE_NEW_PROCESS_GROUP = 0x00000200
+                    DETACHED_PROCESS = 0x00000008
+                    subprocess.Popen(
+                        chrome_args,
+                        creationflags=CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                else:
+                    # Linux
+                    subprocess.Popen(
+                        chrome_args,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True,
+                    )
+            except Exception as e:
+                log_exception("Chrome 启动异常", type(e), e, e.__traceback__)
+                return False, f"Chrome 启动失败: {e}"
 
         # 等待端口就绪
         if not wait_for_port(port, timeout=20):
             log_error(f"Chrome 启动后端口 {port} 未就绪")
-            # 读取错误日志辅助排查
-            try:
-                with open("/tmp/rt-chrome-stderr.log", "r") as f:
-                    err_log = f.read()[:500]
-                if err_log:
-                    log_error(f"Chrome stderr: {err_log}")
-            except Exception:
-                pass
             return False, f"Chrome 启动后端口 {port} 未就绪，请检查。"
 
         log_info(f"Chrome 调试模式已启动（端口 {port}）")
@@ -286,42 +301,66 @@ class ChromeManager:
 
     def stop_chrome(self):
         """
-        停止 Chrome 调试进程。
+        停止 Chrome 调试进程（跨平台）。
 
-        通过 launchctl unload 让 launchd 终止 Chrome 进程。
-        如果 launchctl 未能关闭，使用 pkill 作为后备。
+        macOS: launchctl unload + pkill 后备
+        Windows: taskkill 终止进程树
+        Linux: pkill
         """
         import subprocess
+        import time
 
-        # 优先：通过 launchctl unload 让 launchd 终止 Chrome
-        if os.path.exists(self._LAUNCH_AGENT_PLIST):
+        port = self.config.get("chrome", {}).get("debug_port", 9222)
+
+        if sys.platform == 'darwin':
+            # macOS: 通过 launchctl unload 让 launchd 终止 Chrome
+            if os.path.exists(self._LAUNCH_AGENT_PLIST):
+                try:
+                    subprocess.run(
+                        ["launchctl", "unload", self._LAUNCH_AGENT_PLIST],
+                        timeout=5, capture_output=True
+                    )
+                    log_info("Chrome 已通过 launchctl unload 停止")
+                except Exception as e:
+                    log_warning(f"launchctl unload 失败: {e}")
+
+            # 等待端口释放
+            deadline = time.time() + 3
+            while time.time() < deadline:
+                if not is_port_in_use(port):
+                    break
+                time.sleep(0.5)
+
+            # 后备：pkill
+            if is_port_in_use(port):
+                try:
+                    subprocess.run(
+                        ["pkill", "-f", f"remote-debugging-port={port}"],
+                        timeout=5, capture_output=True
+                    )
+                    log_info(f"Chrome 已通过 pkill 强制关闭 (port={port})")
+                    time.sleep(1)
+                except Exception as e:
+                    log_warning(f"pkill 关闭 Chrome 失败: {e}")
+        elif sys.platform == 'win32':
+            # Windows: 用 taskkill 终止带特定端口的 Chrome 进程
             try:
                 subprocess.run(
-                    ["launchctl", "unload", self._LAUNCH_AGENT_PLIST],
-                    timeout=5, capture_output=True
+                    ["taskkill", "/F", "/IM", "chrome.exe", "/T"],
+                    timeout=10, capture_output=True
                 )
-                log_info("Chrome 已通过 launchctl unload 停止")
+                log_info("Chrome 已通过 taskkill 停止")
+                time.sleep(1)
             except Exception as e:
-                log_warning(f"launchctl unload 失败: {e}")
-
-        # 等待端口释放
-        import time
-        port = self.config.get("chrome", {}).get("debug_port", 9222)
-        deadline = time.time() + 3
-        while time.time() < deadline:
-            if not is_port_in_use(port):
-                break
-            time.sleep(0.5)
-
-        # 后备：如果端口仍被占用，用 pkill 强制关闭 Chrome
-        if is_port_in_use(port):
+                log_warning(f"taskkill 关闭 Chrome 失败: {e}")
+        else:
+            # Linux
             try:
-                # 只关闭带 --remote-debugging-port 参数的 Chrome 实例
                 subprocess.run(
                     ["pkill", "-f", f"remote-debugging-port={port}"],
                     timeout=5, capture_output=True
                 )
-                log_info(f"Chrome 已通过 pkill 强制关闭 (port={port})")
+                log_info(f"Chrome 已通过 pkill 关闭 (port={port})")
                 time.sleep(1)
             except Exception as e:
                 log_warning(f"pkill 关闭 Chrome 失败: {e}")
@@ -480,14 +519,17 @@ class ChromeManager:
             return page
 
     async def _bring_app_to_front(self):
-        """通过 osascript 将本应用拉回前台（异步，不阻塞事件循环）。"""
+        """将本应用拉回前台（跨平台，异步，不阻塞事件循环）。"""
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "osascript", "-e", 'tell application "聚慧 PolySage" to activate',
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            await asyncio.wait_for(proc.wait(), timeout=3)
+            if sys.platform == 'darwin':
+                # macOS: osascript
+                proc = await asyncio.create_subprocess_exec(
+                    "osascript", "-e", 'tell application "聚慧 PolySage" to activate',
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                await asyncio.wait_for(proc.wait(), timeout=3)
+            # Windows/Linux: 不需要特殊处理，Qt 窗口会自动获得焦点
         except Exception as e:
             log_warning(f"拉回前台失败: {e}")
 

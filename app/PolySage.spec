@@ -9,9 +9,9 @@ from PyInstaller.utils.hooks import copy_metadata
 IS_MACOS = sys.platform == 'darwin'
 IS_WINDOWS = sys.platform == 'win32'
 
-datas = [('logo_ui.png', '.'), ('logo_ui@2x.png', '.')]
+datas = [('logo_ui.png', '.'), ('logo_ui@2x.png', '.'), ('AppIcon.icns', '.')]
 binaries = []
-hiddenimports = ['PyQt6', 'PyQt6.QtCore', 'PyQt6.QtGui', 'PyQt6.QtWidgets', 'PyQt6.sip', 'qasync', 'playwright', 'playwright.async_api', 'playwright._impl', 'openai']
+hiddenimports = ['PyQt6', 'PyQt6.QtCore', 'PyQt6.QtGui', 'PyQt6.QtWidgets', 'PyQt6.sip', 'qasync', 'playwright', 'playwright.async_api', 'playwright._impl', 'openai', 'platform_adapter', 'macos_adapter', 'windows_adapter', 'psutil']
 datas += collect_data_files('qasync')
 datas += copy_metadata('openai')
 datas += copy_metadata('qasync')
@@ -29,7 +29,7 @@ if IS_MACOS:
 icon_path = 'AppIcon.icns' if IS_MACOS else None
 
 a = Analysis(
-    ['main.py', 'ui_main_window.py', 'ui_widgets.py', 'ui_worker.py', 'ui_flowlayout.py', 'browser.py', 'core.py', 'config_manager.py', 'utils.py', 'logger.py'],
+    ['main.py', 'ui_main_window.py', 'ui_widgets.py', 'ui_worker.py', 'ui_flowlayout.py', 'browser.py', 'core.py', 'config_manager.py', 'utils.py', 'logger.py', 'platform_adapter.py', 'macos_adapter.py', 'windows_adapter.py'],
     pathex=[],
     binaries=binaries,
     datas=datas,
