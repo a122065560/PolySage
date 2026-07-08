@@ -203,17 +203,13 @@ echo -e "${GREEN}  ✅ 资源已同步${NC}"
 echo ""
 
 # ----------------------------------------------------------------
-# Step 5: 重新签名（深度签名 + Hardened Runtime，解决 macOS 26 兼容性）
+# Step 5: 重新签名（深度签名，解决 macOS 26 兼容性）
 # ----------------------------------------------------------------
 echo -e "${YELLOW}[5/7] 签名 .app...${NC}"
 # 移除可能残留的 entitlements 和 TCC 记录
 xattr -cr "$DIST_DIR/PolySage.app" 2>/dev/null
-# 先签名每个 Qt6 framework
-for fw in "$DIST_DIR/PolySage.app/Contents/Resources/_internal/PyQt6/Qt6/lib/"*.framework; do
-    codesign --force --sign - "$fw" 2>/dev/null
-done
-# 再签名主 app（--options=runtime 启用 Hardened Runtime）
-codesign --force --sign - --options=runtime "$DIST_DIR/PolySage.app" 2>&1 | tail -2
+# 用 --deep 递归签名所有组件（ad-hoc 签名不能用 --options=runtime，会导致 Team ID 不一致）
+codesign --force --deep --sign - "$DIST_DIR/PolySage.app" 2>&1 | tail -2
 echo -e "${GREEN}  ✅ 签名完成${NC}"
 echo ""
 
