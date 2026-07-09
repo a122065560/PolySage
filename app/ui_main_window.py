@@ -931,19 +931,26 @@ class SettingsDialog(QDialog):
         dialog = QDialog(self)
         dialog.setWindowTitle(title)
         dialog.resize(800, 600)
+        from ui_styles import GLOBAL_QSS
+        dialog.setStyleSheet(GLOBAL_QSS)
         dialog_layout = QVBoxLayout(dialog)
-        dialog_layout.setContentsMargins(4, 4, 4, 4)
+        dialog_layout.setContentsMargins(8, 8, 8, 8)
 
         viewer = QTextEdit()
         viewer.setReadOnly(True)
+        viewer.setAcceptRichText(False)
+        # 跨平台等宽字体: macOS用Menlo, Windows用Consolas, Linux用DejaVu Sans Mono
         viewer.setStyleSheet(
             "background-color: #1E1E1E; color: #D4D4D4; "
-            "font-family: 'Menlo', 'Monaco', monospace; font-size: 12px;"
+            "font-family: 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Courier New', monospace; "
+            "font-size: 13px; line-height: 1.6;"
         )
         viewer.setPlainText(content)
         dialog_layout.addWidget(viewer)
 
         close_btn = QPushButton("关闭")
+        close_btn.setObjectName("secondary")
+        close_btn.setFixedHeight(28)
         close_btn.clicked.connect(dialog.accept)
         dialog_layout.addWidget(close_btn)
 

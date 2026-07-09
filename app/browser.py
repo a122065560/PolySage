@@ -192,6 +192,8 @@ class ChromeManager:
             "--no-first-run",
             "--no-default-browser-check",
             "--silent-launch",
+            # 绕过系统代理（Clash 等），否则 AI 网页的 API 调用会走代理导致失败
+            "--no-proxy-server",
         ]
 
         if sys.platform == 'darwin':
@@ -237,15 +239,24 @@ class ChromeManager:
 
             try:
                 if sys.platform == 'win32':
-                    # Windows: DETACHED_PROCESS 防止父进程退出时连带杀死 Chrome
+                    # Windows: CREATE_NO_WINDOW 隐藏控制台
+                    # 注意：不用 DETACHED_PROCESS，会触发 WinError 740（需要提升权限）
                     CREATE_NEW_PROCESS_GROUP = 0x00000200
-                    DETACHED_PROCESS = 0x00000008
-                    subprocess.Popen(
-                        chrome_args,
-                        creationflags=CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
+                    CREATE_NO_WINDOW = 0x08000000
+                    try:
+                        subprocess.Popen(
+                            chrome_args,
+                            creationflags=CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                    except OSError:
+                        # WinError 740 降级：不带 creationflags 重试
+                        subprocess.Popen(
+                            chrome_args,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
                 else:
                     # Linux
                     subprocess.Popen(

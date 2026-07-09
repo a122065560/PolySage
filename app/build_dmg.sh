@@ -23,7 +23,7 @@ cd "$SCRIPT_DIR"
 
 DIST_DIR="$SCRIPT_DIR/dist"
 BUILD_DIR="$SCRIPT_DIR/build"
-DMG_NAME="${DMG_NAME:-聚慧-1.0.0-arm64.dmg}"
+DMG_NAME="${DMG_NAME:-聚慧-1.1.0-arm64.dmg}"
 
 # ----------------------------------------------------------------
 # Step 1: 检查依赖

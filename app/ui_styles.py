@@ -54,7 +54,7 @@ QMainWindow, QWidget {{
     background-color: {BG_WINDOW};
     color: {TEXT_PRIMARY};
     font-size: 13px;
-    font-family: -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+    font-family: -apple-system, "SF Pro Text", "Helvetica Neue", "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
 }}
 
 /* ===== 对话框 ===== */

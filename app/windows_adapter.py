@@ -56,9 +56,10 @@ except Exception:  # pragma: no cover - 兜底，保证可独立 import
 # ======================================================================
 
 # Windows 进程创建标志
-# DETACHED_PROCESS：使子进程脱离父进程控制台
+# CREATE_NO_WINDOW：隐藏控制台窗口（不会触发 UAC 提权）
 # CREATE_NEW_PROCESS_GROUP：创建新进程组，使子进程不受父进程 Ctrl+C 影响
-DETACHED_PROCESS = 0x00000008
+# 注意：不使用 DETACHED_PROCESS，因为它会触发 WinError 740（需要提升权限）
+CREATE_NO_WINDOW = 0x08000000
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 
 # 用户数据目录下需要清理的 Chrome 锁文件
@@ -168,9 +169,12 @@ class WindowsAdapter(PlatformAdapter):
         """
         启动 Chrome 调试进程。
 
-        Windows 下使用 DETACHED_PROCESS + CREATE_NEW_PROCESS_GROUP 使
+        Windows 下使用 CREATE_NO_WINDOW + CREATE_NEW_PROCESS_GROUP 使
         Chrome 独立于父进程运行；必须带 --no-sandbox，否则在某些环境
         下会因沙箱权限问题启动失败。
+
+        注意：不使用 DETACHED_PROCESS 标志，因为它会触发 WinError 740
+        （请求的操作需要提升），导致非管理员用户无法启动 Chrome。
         """
         chrome_path = self._find_chrome_path()
         if not chrome_path:
@@ -200,15 +204,29 @@ class WindowsAdapter(PlatformAdapter):
             f"数据目录 {spec.user_data_dir}, 实例 {spec.instance_id}"
         )
 
-        # DETACHED_PROCESS + CREATE_NEW_PROCESS_GROUP：使 Chrome 独立于父进程
-        creationflags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-        proc = subprocess.Popen(
-            args,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=creationflags,
-            close_fds=True,
-        )
+        # CREATE_NO_WINDOW + CREATE_NEW_PROCESS_GROUP：使 Chrome 独立于父进程
+        # 不使用 DETACHED_PROCESS（会触发 WinError 740 UAC 提权）
+        creationflags = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
+        try:
+            proc = subprocess.Popen(
+                args,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=creationflags,
+                close_fds=True,
+            )
+        except OSError as e:
+            # WinError 740: 需要提升权限 — 尝试不带 creationflags 重试
+            log_warning(f"[Windows] Chrome 启动失败({e})，尝试降级启动...")
+            try:
+                proc = subprocess.Popen(
+                    args,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    close_fds=True,
+                )
+            except Exception as e2:
+                raise RuntimeError(f"Chrome 启动失败: {e2}") from e
 
         handle = ChromeHandle(
             pid=proc.pid,
