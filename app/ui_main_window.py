@@ -103,20 +103,20 @@ class SettingsDialog(QDialog):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
 
-        # 恢复默认小按钮样式
+        # 恢复默认小按钮样式 - 紧凑，与标题同高
         RESET_BTN_STYLE = """
             QPushButton {
-                min-height: 22px;
-                max-height: 22px;
+                min-height: 18px;
+                max-height: 18px;
                 padding: 0px 8px;
                 font-size: 11px;
                 color: #86868B;
                 background-color: transparent;
-                border: 1px solid #E5E5EA;
-                border-radius: 4px;
+                border: 1px solid transparent;
+                border-radius: 3px;
             }
             QPushButton:hover {
                 color: #007AFF;
@@ -126,54 +126,69 @@ class SettingsDialog(QDialog):
         """
 
         def make_group(title: str, reset_callback=None):
-            """创建带标题的 GroupBox，可选「恢复默认」按钮放在内容区顶部。"""
-            group = QGroupBox(title)
-            # 「恢复默认」按钮放在内容区顶部右侧
+            """创建带自定义标题行的 GroupBox，恢复默认按钮放在标题行右侧。"""
+            group = QGroupBox("")
+            group.setStyleSheet("""
+                QGroupBox {
+                    border: 1px solid #E5E5EA;
+                    border-radius: 8px;
+                    margin-top: 0px;
+                    padding: 4px 8px 8px 8px;
+                    font-weight: 600;
+                    font-size: 14px;
+                }
+            """)
+            # 自定义标题行：标题文字 + 恢复默认按钮
+            title_bar = QWidget()
+            title_bar.setStyleSheet("background: transparent;")
+            title_bar_layout = QHBoxLayout(title_bar)
+            title_bar_layout.setContentsMargins(4, 6, 4, 2)
+            title_bar_layout.setSpacing(6)
+
+            title_label = QLabel(title)
+            title_label.setStyleSheet("font-weight: 600; font-size: 13px; color: #1D1D1F; background: transparent;")
+            title_bar_layout.addWidget(title_label)
+
             if reset_callback:
-                header = QWidget()
-                header.setStyleSheet("background: transparent;")
-                header_layout = QHBoxLayout(header)
-                header_layout.setContentsMargins(0, 0, 0, 6)
-                header_layout.addStretch()
+                title_bar_layout.addStretch()
                 reset_btn = QPushButton("恢复默认")
                 reset_btn.setStyleSheet(RESET_BTN_STYLE)
                 reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 reset_btn.clicked.connect(reset_callback)
-                header_layout.addWidget(reset_btn)
-                group._reset_header = header
+                title_bar_layout.addWidget(reset_btn)
+
+            group._title_bar = title_bar
             return group
 
         # 3列网格布局，2行
         grid = QGridLayout()
-        grid.setSpacing(12)
+        grid.setSpacing(8)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
         grid.setColumnStretch(2, 1)
-        grid.setRowStretch(0, 1)
-        grid.setRowStretch(1, 1)
 
-        # ==================== 第一行：AI管理 | 日志 | 异常日志 ====================
+        # ==================== 第一行：AI管理 | 日志 ====================
 
         # --- 左上：AI 平台管理 ---
         platform_group = make_group("🤖 AI 平台管理", self._on_reset_platform)
         platform_layout = QVBoxLayout(platform_group)
-        platform_layout.setSpacing(0)
-        if hasattr(platform_group, '_reset_header'):
-            platform_layout.addWidget(platform_group._reset_header)
+        platform_layout.setContentsMargins(4, 0, 4, 4)
+        platform_layout.setSpacing(2)
+        platform_layout.addWidget(platform_group._title_bar)
 
         # 用 QWidget 容器 + QVBoxLayout 替代 QListWidget，行高紧凑（参考主界面AI芯片28px）
         self._platform_container = QWidget()
         self._platform_container.setStyleSheet("background: transparent; border: none;")
         self._platform_container_layout = QVBoxLayout(self._platform_container)
-        self._platform_container_layout.setContentsMargins(4, 2, 4, 2)
-        self._platform_container_layout.setSpacing(2)
+        self._platform_container_layout.setContentsMargins(2, 0, 2, 0)
+        self._platform_container_layout.setSpacing(1)
 
         # 包裹在 QScrollArea 中
         platform_scroll = QScrollArea()
         platform_scroll.setWidget(self._platform_container)
         platform_scroll.setWidgetResizable(True)
         platform_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        platform_scroll.setMinimumHeight(140)
+        platform_scroll.setMinimumHeight(120)
         platform_scroll.setStyleSheet("""
             QScrollArea {
                 border: 1px solid #E5E7EB;
@@ -185,13 +200,14 @@ class SettingsDialog(QDialog):
         self._refresh_platform_list()
 
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(6)
+        btn_row.setSpacing(4)
         self.add_btn = QPushButton("添加")
         self.edit_btn = QPushButton("编辑")
         self.toggle_btn = QPushButton("启用/禁用")
         self.delete_btn = QPushButton("删除")
         for btn in [self.add_btn, self.edit_btn, self.toggle_btn, self.delete_btn]:
             btn.setObjectName("default")
+            btn.setFixedHeight(26)
         btn_row.addWidget(self.add_btn)
         btn_row.addWidget(self.edit_btn)
         btn_row.addWidget(self.toggle_btn)
@@ -208,19 +224,24 @@ class SettingsDialog(QDialog):
 
         # --- 中上+右上：日志管理（合并2列，内部左右分栏） ---
         log_group = make_group("📋 日志管理")
-        log_inner = QHBoxLayout(log_group)
-        log_inner.setSpacing(12)
+        log_layout = QVBoxLayout(log_group)
+        log_layout.setContentsMargins(4, 0, 4, 4)
+        log_layout.setSpacing(4)
+        log_layout.addWidget(log_group._title_bar)
+
+        log_inner = QHBoxLayout()
+        log_inner.setSpacing(8)
 
         # ---- 左半侧：文件列表 ----
         log_left = QVBoxLayout()
-        log_left.setSpacing(0)
+        log_left.setSpacing(2)
 
         # 文件列表（自定义Widget行，与AI平台列表统一风格）
         self._log_file_container = QWidget()
         self._log_file_container.setStyleSheet("background: transparent; border: none;")
         self._log_file_layout = QVBoxLayout(self._log_file_container)
-        self._log_file_layout.setContentsMargins(4, 2, 4, 2)
-        self._log_file_layout.setSpacing(2)
+        self._log_file_layout.setContentsMargins(2, 0, 2, 0)
+        self._log_file_layout.setSpacing(1)
 
         log_scroll = QScrollArea()
         log_scroll.setWidget(self._log_file_container)
@@ -244,15 +265,16 @@ class SettingsDialog(QDialog):
 
         # ---- 右半侧：日期选择 + 日志信息 + 按钮 ----
         log_right = QVBoxLayout()
-        log_right.setSpacing(8)
+        log_right.setSpacing(6)
 
         # 日期选择（移到右侧顶部）
         date_row = QHBoxLayout()
-        date_row.setSpacing(8)
+        date_row.setSpacing(6)
         date_label = QLabel("📅 日期:")
         date_label.setStyleSheet("font-size: 12px; color: #6B7280;")
         self._log_date_combo = QComboBox()
-        self._log_date_combo.setMinimumWidth(120)
+        self._log_date_combo.setMinimumWidth(100)
+        self._log_date_combo.setFixedHeight(24)
         self._refresh_log_dates()
         self._log_date_combo.currentTextChanged.connect(self._refresh_log_files)
         date_row.addWidget(date_label)
@@ -267,9 +289,9 @@ class SettingsDialog(QDialog):
             QLabel {
                 background-color: #F9FAFB;
                 border: 1px solid #E5E7EB;
-                border-radius: 8px;
-                padding: 10px 12px;
-                font-size: 12px;
+                border-radius: 6px;
+                padding: 6px 10px;
+                font-size: 11px;
                 color: #374151;
             }
         """)
@@ -279,16 +301,16 @@ class SettingsDialog(QDialog):
 
         # 操作按钮区（竖向排列）
         log_btn_col = QVBoxLayout()
-        log_btn_col.setSpacing(8)
+        log_btn_col.setSpacing(6)
 
         self.open_log_btn = QPushButton("📂 打开日志目录")
-        self.open_log_btn.setObjectName("secondary")
-        self.open_log_btn.setMinimumHeight(34)
+        self.open_log_btn.setObjectName("default")
+        self.open_log_btn.setFixedHeight(26)
         log_btn_col.addWidget(self.open_log_btn)
 
         self.delete_all_log_btn = QPushButton("🗑 清空全部日志")
         self.delete_all_log_btn.setObjectName("default")
-        self.delete_all_log_btn.setMinimumHeight(34)
+        self.delete_all_log_btn.setFixedHeight(26)
         log_btn_col.addWidget(self.delete_all_log_btn)
 
         log_right.addLayout(log_btn_col)
@@ -298,110 +320,136 @@ class SettingsDialog(QDialog):
         self.open_log_btn.clicked.connect(self._on_open_log_dir)
         self.delete_all_log_btn.clicked.connect(self._on_delete_all_logs)
 
+        log_layout.addLayout(log_inner)
+
         grid.addWidget(log_group, 0, 1, 1, 2)  # 跨2列
 
         # ==================== 第二行：讨论参数 | 开场白 | LMStudio ====================
 
         # --- 左下：讨论参数 ---
         disc_group = make_group("💬 讨论参数", self._on_reset_discussion)
-        disc_layout = QFormLayout(disc_group)
-        disc_layout.setSpacing(10)
-        disc_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        if hasattr(disc_group, '_reset_header'):
-            disc_layout.addRow(disc_group._reset_header)
+        disc_layout = QVBoxLayout(disc_group)
+        disc_layout.setContentsMargins(4, 0, 4, 4)
+        disc_layout.setSpacing(2)
+        disc_layout.addWidget(disc_group._title_bar)
+
+        disc_form = QFormLayout()
+        disc_form.setSpacing(6)
+        disc_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        disc_form.setContentsMargins(8, 0, 8, 0)
         disc = self.config_mgr.config.get("discussion", {})
 
         self.max_rounds_spin = QSpinBox()
         self.max_rounds_spin.setRange(1, 200)
         self.max_rounds_spin.setValue(disc.get("max_rounds", 100))
-        self.max_rounds_spin.setMinimumWidth(160)
-        disc_layout.addRow("最大轮数:", self.max_rounds_spin)
+        self.max_rounds_spin.setFixedHeight(24)
+        self.max_rounds_spin.setMinimumWidth(120)
+        disc_form.addRow("最大轮数:", self.max_rounds_spin)
 
         self.timeout_spin = QSpinBox()
         self.timeout_spin.setRange(10, 3600)
         self.timeout_spin.setValue(disc.get("timeout_seconds", 600))
-        self.timeout_spin.setMinimumWidth(160)
-        disc_layout.addRow("超时(秒):", self.timeout_spin)
+        self.timeout_spin.setFixedHeight(24)
+        self.timeout_spin.setMinimumWidth(120)
+        disc_form.addRow("超时(秒):", self.timeout_spin)
 
         self.start_signal_edit = QLineEdit(disc.get("start_signal", "<ok>"))
-        self.start_signal_edit.setMinimumWidth(160)
+        self.start_signal_edit.setFixedHeight(24)
+        self.start_signal_edit.setMinimumWidth(120)
         self.start_signal_edit.setPlaceholderText("如 <ok>")
-        disc_layout.addRow("开场标识:", self.start_signal_edit)
+        disc_form.addRow("开场标识:", self.start_signal_edit)
 
         self.end_signal_edit = QLineEdit(disc.get("end_signal", "<End>"))
-        self.end_signal_edit.setMinimumWidth(160)
+        self.end_signal_edit.setFixedHeight(24)
+        self.end_signal_edit.setMinimumWidth(120)
         self.end_signal_edit.setPlaceholderText("如 <End>")
-        disc_layout.addRow("结束标识:", self.end_signal_edit)
+        disc_form.addRow("结束标识:", self.end_signal_edit)
 
         self.arbitration_signal_edit = QLineEdit(disc.get("arbitration_signal", "<结案>"))
-        self.arbitration_signal_edit.setMinimumWidth(160)
+        self.arbitration_signal_edit.setFixedHeight(24)
+        self.arbitration_signal_edit.setMinimumWidth(120)
         self.arbitration_signal_edit.setPlaceholderText("如 <结案>")
-        disc_layout.addRow("结案标识:", self.arbitration_signal_edit)
+        disc_form.addRow("结案标识:", self.arbitration_signal_edit)
 
         # 默认军师选择
         self.default_arb_combo = QComboBox()
-        self.default_arb_combo.setMinimumWidth(160)
+        self.default_arb_combo.setFixedHeight(24)
+        self.default_arb_combo.setMinimumWidth(120)
         for p in self.config_mgr.get_ai_platforms():
             self.default_arb_combo.addItem(p["name"])
         current_arb = disc.get("arbitrator", "智谱清言")
         idx = self.default_arb_combo.findText(current_arb)
         if idx >= 0:
             self.default_arb_combo.setCurrentIndex(idx)
-        disc_layout.addRow("默认军师:", self.default_arb_combo)
+        disc_form.addRow("默认军师:", self.default_arb_combo)
+
+        disc_layout.addLayout(disc_form)
+        disc_layout.addStretch()
 
         grid.addWidget(disc_group, 1, 0)
 
         # --- 中下：开场白 ---
         opening_group = make_group("📝 开场白", self._on_reset_opening)
         opening_layout = QVBoxLayout(opening_group)
-        if hasattr(opening_group, '_reset_header'):
-            opening_layout.addWidget(opening_group._reset_header)
+        opening_layout.setContentsMargins(4, 0, 4, 4)
+        opening_layout.setSpacing(4)
+        opening_layout.addWidget(opening_group._title_bar)
 
         opening_hint = QLabel("此开场白会原样发送给每个AI。\n系统会自动在后面追加【规则】部分，无需在此填写规则。")
-        opening_hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
+        opening_hint.setStyleSheet("color: #86868B; font-size: 11px; padding: 0 4px;")
         opening_hint.setWordWrap(True)
         opening_layout.addWidget(opening_hint)
 
         self.opening_edit = QTextEdit()
         self.opening_edit.setPlaceholderText("输入开场白...")
         self.opening_edit.setText(disc.get("opening_remarks", ""))
-        self.opening_edit.setMinimumHeight(100)
+        self.opening_edit.setMinimumHeight(80)
         opening_layout.addWidget(self.opening_edit)
 
         grid.addWidget(opening_group, 1, 1)
 
         # --- 右下：LM Studio 配置 ---
         lm_group = make_group("🧠 LM Studio 配置", self._on_reset_lmstudio)
-        lm_layout = QFormLayout(lm_group)
-        lm_layout.setSpacing(10)
-        lm_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        if hasattr(lm_group, '_reset_header'):
-            lm_layout.addRow(lm_group._reset_header)
+        lm_layout = QVBoxLayout(lm_group)
+        lm_layout.setContentsMargins(4, 0, 4, 4)
+        lm_layout.setSpacing(2)
+        lm_layout.addWidget(lm_group._title_bar)
+
+        lm_form = QFormLayout()
+        lm_form.setSpacing(6)
+        lm_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        lm_form.setContentsMargins(8, 0, 8, 0)
         lm = self.config_mgr.config.get("lm_studio", {})
 
         self.lm_enabled_cb = QCheckBox("启用 LM Studio")
         self.lm_enabled_cb.setChecked(lm.get("enabled", False))
-        lm_layout.addRow(self.lm_enabled_cb)
+        lm_form.addRow(self.lm_enabled_cb)
 
         self.lm_url_edit = QLineEdit(lm.get("url", "http://127.0.0.1:1234/v1"))
-        self.lm_url_edit.setMinimumWidth(200)
+        self.lm_url_edit.setFixedHeight(24)
+        self.lm_url_edit.setMinimumWidth(160)
         self.lm_url_edit.setPlaceholderText("http://127.0.0.1:1234/v1")
-        lm_layout.addRow("服务地址:", self.lm_url_edit)
+        lm_form.addRow("服务地址:", self.lm_url_edit)
 
         self.lm_name_edit = QLineEdit(lm.get("display_name", "MyAi"))
-        self.lm_name_edit.setMinimumWidth(200)
+        self.lm_name_edit.setFixedHeight(24)
+        self.lm_name_edit.setMinimumWidth(160)
         self.lm_name_edit.setPlaceholderText("本地模型的显示名称")
-        lm_layout.addRow("显示名称:", self.lm_name_edit)
+        lm_form.addRow("显示名称:", self.lm_name_edit)
 
         self.lm_key_edit = QLineEdit(lm.get("api_key", ""))
-        self.lm_key_edit.setMinimumWidth(200)
+        self.lm_key_edit.setFixedHeight(24)
+        self.lm_key_edit.setMinimumWidth(160)
         self.lm_key_edit.setPlaceholderText("留空则使用 not-needed")
-        lm_layout.addRow("API Key:", self.lm_key_edit)
+        lm_form.addRow("API Key:", self.lm_key_edit)
 
         lm_hint = QLabel("💡 用于本地大模型辅助\n（实时摘要 / 追问建议 / 结案汇总）")
-        lm_hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
+        lm_hint.setStyleSheet("color: #86868B; font-size: 11px; padding: 0 4px;")
         lm_hint.setWordWrap(True)
-        lm_layout.addRow("", lm_hint)
+        lm_form.addRow("", lm_hint)
+
+        lm_layout.addLayout(lm_form)
+        lm_layout.addStretch()
 
         grid.addWidget(lm_group, 1, 2)
 
@@ -413,11 +461,13 @@ class SettingsDialog(QDialog):
 
         self.restore_all_btn = QPushButton("恢复所有默认")
         self.restore_all_btn.setObjectName("secondary")
+        self.restore_all_btn.setFixedHeight(28)
         self.restore_all_btn.clicked.connect(self._on_restore_all_defaults)
         btn_bar.addWidget(self.restore_all_btn)
 
         self.save_btn = QPushButton("保存设置")
         self.save_btn.setObjectName("primary")
+        self.save_btn.setFixedHeight(28)
         self.save_btn.clicked.connect(self._on_save)
         btn_bar.addWidget(self.save_btn)
 

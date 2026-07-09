@@ -65,8 +65,8 @@ QDialog {{
 
 /* ===== 按钮基础（所有按钮共享） ===== */
 QPushButton {{
-    min-height: 32px;
-    padding: 6px 14px;
+    min-height: 28px;
+    padding: 4px 12px;
     font-size: 13px;
     color: {TEXT_PRIMARY};
     background-color: {BG_PANEL};
@@ -76,14 +76,14 @@ QPushButton {{
 }}
 QPushButton:focus {{
     border: 2px solid {BORDER_FOCUS};
-    padding: 5px 13px;
+    padding: 3px 11px;
 }}
 
 /* ===== Primary 主按钮（蓝色填充） ===== */
 QPushButton#primary {{
-    min-height: 36px;
-    padding: 8px 20px;
-    font-size: 14px;
+    min-height: 28px;
+    padding: 4px 16px;
+    font-size: 13px;
     font-weight: 600;
     color: {TEXT_ON_ACCENT};
     background-color: {ACCENT};
@@ -104,8 +104,8 @@ QPushButton#primary:disabled {{
 
 /* ===== Secondary 次按钮（白底 + 蓝色边框） ===== */
 QPushButton#secondary {{
-    min-height: 34px;
-    padding: 7px 16px;
+    min-height: 28px;
+    padding: 4px 14px;
     font-size: 13px;
     font-weight: 500;
     color: {ACCENT};
@@ -266,8 +266,8 @@ QTextEdit, QLineEdit, QPlainTextEdit {{
     background-color: {BG_INPUT};
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};
-    border-radius: 8px;
-    padding: 6px 10px;
+    border-radius: 6px;
+    padding: 4px 8px;
     font-size: 13px;
     selection-background-color: {ACCENT_LIGHT};
 }}
@@ -317,8 +317,8 @@ QTextEdit:focus, QLineEdit:focus, QPlainTextEdit:focus {{
 
 /* ===== 下拉框 ===== */
 QComboBox {{
-    min-height: 28px;
-    padding: 4px 12px;
+    min-height: 24px;
+    padding: 2px 10px;
     background-color: {BG_PANEL};
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};
@@ -494,19 +494,11 @@ QWidget#header_bar {{
 QGroupBox {{
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER_LIGHT};
-    border-radius: 10px;
-    margin-top: 20px;
-    padding: 26px 12px 12px 12px;
+    border-radius: 8px;
+    margin-top: 0px;
+    padding: 4px 8px 8px 8px;
     font-weight: 600;
     font-size: 14px;
-}}
-QGroupBox::title {{
-    subcontrol-origin: margin;
-    subcontrol-position: top left;
-    left: 14px;
-    top: 4px;
-    padding: 0 6px;
-    color: {TEXT_PRIMARY};
 }}
 
 /* ===== 复选框 ===== */
@@ -532,8 +524,8 @@ QCheckBox::indicator:checked {{
 
 /* ===== SpinBox ===== */
 QSpinBox {{
-    min-height: 28px;
-    padding: 4px 10px;
+    min-height: 24px;
+    padding: 2px 8px;
     background-color: {BG_INPUT};
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};
