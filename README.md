@@ -5,8 +5,8 @@
 **多 AI 圆桌讨论桌面应用**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/平台-macOS%20%7C%20Windows-blue)](https://github.com/a122065560/聚慧/releases)
-[![Release](https://img.shields.io/github/v/release/a122065560/聚慧)](https://github.com/a122065560/聚慧/releases)
+[![Platform](https://img.shields.io/badge/平台-macOS%20%7C%20Windows-blue)](https://github.com/a122065560/PolySage/releases)
+[![Release](https://img.shields.io/github/v/release/a122065560/PolySage)](https://github.com/a122065560/PolySage/releases)
 
 </div>
 
@@ -36,7 +36,7 @@
 
 ## 下载安装
 
-前往 [Releases 页面](https://github.com/a122065560/聚慧/releases) 下载最新版本：
+前往 [Releases 页面](https://github.com/a122065560/PolySage/releases) 下载最新版本：
 
 | 文件 | 平台 | 说明 |
 |------|------|------|
@@ -56,7 +56,7 @@
 ## 开发
 
 ```bash
-git clone https://github.com/a122065560/聚慧.git
+git clone https://github.com/a122065560/PolySage.git
 cd PolySage/app
 pip install -r requirements.txt
 playwright install chromium
