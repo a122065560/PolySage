@@ -78,6 +78,10 @@ class SettingsDialog(QDialog):
         from ui_styles import GLOBAL_QSS
         self.setStyleSheet(GLOBAL_QSS)
         self._build_ui()
+        # 打开时自动刷新日志列表
+        self._refresh_log_dates()
+        self._refresh_log_files()
+        self._refresh_log_info()
 
     def _show_toast(self, message: str, duration: int = 2500):
         """在设置弹窗中显示简短提示（使用状态栏式标签）。"""
@@ -396,8 +400,9 @@ class SettingsDialog(QDialog):
         opening_layout.addWidget(opening_hint)
 
         self.opening_edit = QTextEdit()
+        self.opening_edit.setAcceptRichText(False)
         self.opening_edit.setPlaceholderText("输入开场白...")
-        self.opening_edit.setText(disc.get("opening_remarks", ""))
+        self.opening_edit.setPlainText(disc.get("opening_remarks", ""))
         self.opening_edit.setMinimumHeight(80)
         opening_layout.addWidget(self.opening_edit)
 
@@ -559,17 +564,10 @@ class SettingsDialog(QDialog):
         return self._platform_selected_row
 
     def _on_add_platform(self):
-        """添加平台 - 弹出输入对话框。"""
-        name, ok = QInputDialog.getText(self, "添加平台", "平台名称:")
-        if not ok or not name:
-            return
-        url, ok = QInputDialog.getText(self, "添加平台", "平台URL:")
-        if not ok or not url:
-            return
-
-        platform = {
-            "name": name,
-            "url": url,
+        """添加平台 - 使用 PlatformEditDialog 统一编辑界面。"""
+        new_platform = {
+            "name": "",
+            "url": "",
             "enabled": False,
             "selectors": {
                 "input_textarea": "textarea",
@@ -580,11 +578,23 @@ class SettingsDialog(QDialog):
                 "login_indicator": "",
                 "login_button": "button:has-text('登录')",
             },
+            "thinking_mode": {"enabled": False, "detect": {}, "enable_steps": []},
         }
-        if self.config_mgr.add_platform(platform):
-            self._refresh_platform_list()
-        else:
-            self._show_toast(f"添加失败：名称 '{name}' 可能已存在。")
+        dialog = PlatformEditDialog(new_platform, self)
+        dialog.setWindowTitle("添加平台")
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            platform = dialog.get_platform()
+            if not platform["name"].strip():
+                self._show_toast("平台名称不能为空。")
+                return
+            if not platform["url"].strip():
+                self._show_toast("平台URL不能为空。")
+                return
+            if self.config_mgr.add_platform(platform):
+                self._refresh_platform_list()
+                self._show_toast(f"平台 '{platform['name']}' 已添加。")
+            else:
+                self._show_toast(f"添加失败：名称 '{platform['name']}' 可能已存在。")
 
     def _on_edit_platform(self, idx=None):
         """编辑平台 - 弹出选择器编辑对话框。"""
@@ -735,7 +745,7 @@ class SettingsDialog(QDialog):
         if reply != QMessageBox.StandardButton.Yes:
             return
         default_disc = DEFAULT_CONFIG.get("discussion", {})
-        self.opening_edit.setText(default_disc.get("opening_remarks", ""))
+        self.opening_edit.setPlainText(default_disc.get("opening_remarks", ""))
         self._show_toast("开场白已恢复默认")
         log_info("已恢复开场白为默认值")
 
@@ -1024,6 +1034,7 @@ class PlatformEditDialog(QDialog):
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
+        layout.setContentsMargins(16, 16, 16, 16)
 
         # 启用复选框
         self.enabled_cb = QCheckBox("启用此平台（启用后才会在主界面显示）")
@@ -1034,16 +1045,39 @@ class PlatformEditDialog(QDialog):
         form_top = QFormLayout()
         form_top.setSpacing(8)
         self.name_edit = QLineEdit(self.platform.get("name", ""))
+        self.name_edit.setFixedHeight(24)
         self.name_edit.setMinimumWidth(500)
         form_top.addRow("名称:", self.name_edit)
 
         self.url_edit = QLineEdit(self.platform.get("url", ""))
+        self.url_edit.setFixedHeight(24)
         self.url_edit.setMinimumWidth(500)
         form_top.addRow("URL:", self.url_edit)
         layout.addLayout(form_top)
 
+        # GroupBox 标题样式（覆盖全局QSS，确保标题完整显示）
+        GROUP_STYLE = """
+            QGroupBox {
+                border: 1px solid #E5E5EA;
+                border-radius: 8px;
+                margin-top: 14px;
+                padding: 18px 10px 10px 10px;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 10px;
+                top: 0px;
+                padding: 0 6px;
+                background-color: #FFFFFF;
+            }
+        """
+
         # 选择器
         sels_group = QGroupBox("CSS 选择器配置")
+        sels_group.setStyleSheet(GROUP_STYLE)
         sels_layout = QFormLayout(sels_group)
         sels_layout.setSpacing(6)
         sels = self.platform.get("selectors", {})
@@ -1060,6 +1094,7 @@ class PlatformEditDialog(QDialog):
         ]
         for key, label in sel_fields:
             edit = QLineEdit(sels.get(key, ""))
+            edit.setFixedHeight(24)
             edit.setMinimumWidth(500)
             sels_layout.addRow(label, edit)
             self.sel_inputs[key] = edit
@@ -1068,10 +1103,10 @@ class PlatformEditDialog(QDialog):
 
         # 思考模式配置
         think_group = QGroupBox("思考模式配置（可选，用于自动开启深度思考）")
+        think_group.setStyleSheet(GROUP_STYLE)
         think_layout = QFormLayout(think_group)
         think_layout.setSpacing(6)
         tm = self.platform.get("thinking_mode", {})
-        # 兼容新格式：detect 子配置
         detect_cfg = tm.get("detect", {})
 
         self.tm_enabled = QCheckBox("启用自动开启思考模式")
@@ -1080,10 +1115,10 @@ class PlatformEditDialog(QDialog):
 
         self.tm_detect_type = QComboBox()
         self.tm_detect_type.addItems(["toggle", "dropdown"])
+        self.tm_detect_type.setFixedHeight(24)
         self.tm_detect_type.setCurrentText(detect_cfg.get("type", tm.get("type", "toggle")))
         think_layout.addRow("检测类型:", self.tm_detect_type)
         self.tm_inputs = {}
-        # 新格式字段（detect 子配置）
         tm_fields = [
             ("label_selector", "标签选择器 (dropdown检测用):"),
             ("label_text", "激活标签文本:"),
@@ -1093,15 +1128,19 @@ class PlatformEditDialog(QDialog):
         ]
         for key, label in tm_fields:
             edit = QLineEdit(detect_cfg.get(key, tm.get(key, "")))
+            edit.setFixedHeight(24)
             edit.setMinimumWidth(500)
             think_layout.addRow(label, edit)
             self.tm_inputs[key] = edit
 
-        # 启用步骤（enable_steps）
-        think_layout.addRow(QLabel("启用步骤（JSON格式，每步: click/wait/click_text）:"))
+        # 启用步骤
+        steps_label = QLabel("启用步骤（JSON格式，每步: click/wait/click_text）:")
+        steps_label.setStyleSheet("font-size: 12px; color: #6B7280;")
+        think_layout.addRow(steps_label)
         import json as _json
         steps = tm.get("enable_steps", [])
         self.tm_steps_edit = QLineEdit(_json.dumps(steps, ensure_ascii=False) if steps else "")
+        self.tm_steps_edit.setFixedHeight(24)
         self.tm_steps_edit.setMinimumWidth(500)
         self.tm_steps_edit.setPlaceholderText('[{"action":"click","selector":"..."},{"action":"wait","ms":800}]')
         think_layout.addRow("enable_steps:", self.tm_steps_edit)
@@ -1111,6 +1150,7 @@ class PlatformEditDialog(QDialog):
         # 保存按钮
         btn = QPushButton("保存")
         btn.setObjectName("primary")
+        btn.setFixedHeight(28)
         btn.setMaximumWidth(120)
         btn.clicked.connect(self._on_save)
 
