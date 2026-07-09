@@ -440,8 +440,8 @@ class SettingsDialog(QDialog):
 
         layout.addLayout(btn_bar)
 
-    # 选中平台索引（替代 QListWidget.currentRow）
-    self._platform_selected_row = -1
+        # 选中平台索引（替代 QListWidget.currentRow）
+        self._platform_selected_row = -1
 
     def _refresh_platform_list(self):
         """刷新 AI 平台列表（自定义 Widget 行）。"""
