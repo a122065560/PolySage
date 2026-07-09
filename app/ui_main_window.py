@@ -13,7 +13,7 @@ import asyncio
 import json
 import os
 
-from ui_styles import GLOBAL_QSS, ACCENT, TEXT_SECONDARY, TEXT_PRIMARY, SUCCESS
+from ui_styles import GLOBAL_QSS, ACCENT, TEXT_SECONDARY, TEXT_PRIMARY, SUCCESS, BG_WINDOW
 from ui_flowlayout import FlowLayout
 
 from PyQt6.QtWidgets import (
@@ -106,6 +106,65 @@ class SettingsDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
+        # 恢复默认小按钮样式
+        RESET_BTN_STYLE = """
+            QPushButton {
+                min-height: 22px;
+                max-height: 22px;
+                padding: 0px 8px;
+                font-size: 11px;
+                color: #86868B;
+                background-color: transparent;
+                border: 1px solid #E5E5EA;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                color: #007AFF;
+                border-color: #007AFF;
+                background-color: #E8F2FF;
+            }
+        """
+
+        def make_group(title: str, reset_callback=None) -> QGroupBox:
+            """创建带标题的 GroupBox，可选在标题右侧添加「恢复默认」小按钮。"""
+            group = QGroupBox("")
+            group.setStyleSheet("""
+                QGroupBox {
+                    border: 1px solid #E5E5EA;
+                    border-radius: 10px;
+                    margin-top: 16px;
+                    padding: 20px 12px 12px 12px;
+                }
+            """)
+            # 自定义标题栏（浮在边框上方）
+            title_bar = QWidget(group)
+            title_bar.setStyleSheet("background: transparent;")
+            title_bar.setGeometry(8, 2, 600, 22)
+            title_bar.move(8, -8)
+            tb_layout = QHBoxLayout(title_bar)
+            tb_layout.setContentsMargins(4, 0, 4, 0)
+            tb_layout.setSpacing(6)
+            title_label = QLabel(title)
+            title_label.setStyleSheet(f"""
+                QLabel {{
+                    font-weight: 600;
+                    font-size: 13px;
+                    color: {TEXT_PRIMARY};
+                    background: {BG_WINDOW};
+                    padding: 0 4px;
+                }}
+            """)
+            tb_layout.addWidget(title_label)
+            tb_layout.addStretch()
+            if reset_callback:
+                reset_btn = QPushButton("恢复默认")
+                reset_btn.setStyleSheet(RESET_BTN_STYLE)
+                reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                reset_btn.clicked.connect(reset_callback)
+                tb_layout.addWidget(reset_btn)
+            group.title_bar = title_bar  # 防止被GC回收
+            return group
+
         # 3列网格布局，2行
         grid = QGridLayout()
         grid.setSpacing(12)
@@ -118,26 +177,41 @@ class SettingsDialog(QDialog):
         # ==================== 第一行：AI管理 | 日志 | 异常日志 ====================
 
         # --- 左上：AI 平台管理 ---
-        platform_group = QGroupBox("🤖 AI 平台管理")
+        platform_group = make_group("🤖 AI 平台管理", self._on_reset_platform)
         platform_layout = QVBoxLayout(platform_group)
+        platform_layout.setSpacing(0)
 
-        self.platform_list = QListWidget()
-        self.platform_list.setMinimumHeight(160)
-        self.platform_list.setStyleSheet("""
-            QListWidget::item {
-                padding: 4px 10px;
-                border-radius: 4px;
+        # 用 QWidget 容器 + QVBoxLayout 替代 QListWidget，行高紧凑（参考主界面AI芯片28px）
+        self._platform_container = QWidget()
+        self._platform_container.setStyleSheet("background: transparent; border: none;")
+        self._platform_container_layout = QVBoxLayout(self._platform_container)
+        self._platform_container_layout.setContentsMargins(4, 2, 4, 2)
+        self._platform_container_layout.setSpacing(2)
+
+        # 包裹在 QScrollArea 中
+        platform_scroll = QScrollArea()
+        platform_scroll.setWidget(self._platform_container)
+        platform_scroll.setWidgetResizable(True)
+        platform_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        platform_scroll.setMinimumHeight(140)
+        platform_scroll.setStyleSheet("""
+            QScrollArea {
+                border: 1px solid #E5E7EB;
+                border-radius: 6px;
+                background-color: #FFFFFF;
             }
         """)
+        platform_layout.addWidget(platform_scroll)
         self._refresh_platform_list()
-        platform_layout.addWidget(self.platform_list)
 
         btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
         self.add_btn = QPushButton("添加")
         self.edit_btn = QPushButton("编辑")
         self.toggle_btn = QPushButton("启用/禁用")
         self.delete_btn = QPushButton("删除")
-        self.delete_btn.setObjectName("danger_ghost")
+        for btn in [self.add_btn, self.edit_btn, self.toggle_btn, self.delete_btn]:
+            btn.setObjectName("default")
         btn_row.addWidget(self.add_btn)
         btn_row.addWidget(self.edit_btn)
         btn_row.addWidget(self.toggle_btn)
@@ -152,71 +226,94 @@ class SettingsDialog(QDialog):
 
         grid.addWidget(platform_group, 0, 0)
 
-        # --- 中上+右上：日志管理（合并2列） ---
-        log_group = QGroupBox("📋 日志管理")
-        log_layout = QVBoxLayout(log_group)
+        # --- 中上+右上：日志管理（合并2列，内部左右分栏） ---
+        log_group = make_group("📋 日志管理")
+        log_inner = QHBoxLayout(log_group)
+        log_inner.setSpacing(12)
 
-        # 统计信息
-        self._log_info_label = QLabel()
-        self._refresh_log_info()
-        self._log_info_label.setWordWrap(True)
-        log_layout.addWidget(self._log_info_label)
+        # ---- 左半侧：文件列表 ----
+        log_left = QVBoxLayout()
+        log_left.setSpacing(0)
 
-        # 日期选择
-        date_row = QHBoxLayout()
-        date_label = QLabel("📅 日期:")
-        date_label.setStyleSheet("font-size: 12px; color: #6B7280;")
-        self._log_date_combo = QComboBox()
-        self._log_date_combo.setMinimumWidth(160)
-        self._refresh_log_dates()
-        self._log_date_combo.currentTextChanged.connect(self._refresh_log_files)
-        date_row.addWidget(date_label)
-        date_row.addWidget(self._log_date_combo)
-        date_row.addStretch()
-        log_layout.addLayout(date_row)
+        # 文件列表（自定义Widget行，与AI平台列表统一风格）
+        self._log_file_container = QWidget()
+        self._log_file_container.setStyleSheet("background: transparent; border: none;")
+        self._log_file_layout = QVBoxLayout(self._log_file_container)
+        self._log_file_layout.setContentsMargins(4, 2, 4, 2)
+        self._log_file_layout.setSpacing(2)
 
-        # 文件列表（树形）
-        from PyQt6.QtWidgets import QTreeWidget, QTreeWidgetItem
-        self._log_tree = QTreeWidget()
-        self._log_tree.setHeaderLabels(["文件名", "大小", ""])
-        self._log_tree.setColumnWidth(0, 300)
-        self._log_tree.setColumnWidth(1, 80)
-        self._log_tree.setColumnWidth(2, 50)
-        self._log_tree.setRootIsDecorated(True)
-        self._log_tree.setUniformRowHeights(True)
-        self._log_tree.itemDoubleClicked.connect(self._on_log_item_double_clicked)
-        self._log_tree.setMouseTracking(True)
-        self._log_tree.setStyleSheet("""
-            QTreeWidget {
+        log_scroll = QScrollArea()
+        log_scroll.setWidget(self._log_file_container)
+        log_scroll.setWidgetResizable(True)
+        log_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        log_scroll.setStyleSheet("""
+            QScrollArea {
                 border: 1px solid #E5E7EB;
-                border-radius: 4px;
-                font-size: 12px;
-            }
-            QTreeWidget::item {
-                padding: 3px 6px;
-            }
-            QTreeWidget::item:hover {
-                background-color: #F3F4F6;
+                border-radius: 6px;
+                background-color: #FFFFFF;
             }
         """)
-        log_layout.addWidget(self._log_tree)
-        self._refresh_log_files()
+        log_left.addWidget(log_scroll)
 
         # 双击提示
         hint_label = QLabel("💡 双击文件查看内容")
         hint_label.setStyleSheet("font-size: 11px; color: #9CA3AF;")
-        log_layout.addWidget(hint_label)
+        log_left.addWidget(hint_label)
 
-        # 底部按钮
-        log_btn_row = QHBoxLayout()
+        log_inner.addLayout(log_left, stretch=3)
+
+        # ---- 右半侧：日期选择 + 日志信息 + 按钮 ----
+        log_right = QVBoxLayout()
+        log_right.setSpacing(8)
+
+        # 日期选择（移到右侧顶部）
+        date_row = QHBoxLayout()
+        date_row.setSpacing(8)
+        date_label = QLabel("📅 日期:")
+        date_label.setStyleSheet("font-size: 12px; color: #6B7280;")
+        self._log_date_combo = QComboBox()
+        self._log_date_combo.setMinimumWidth(120)
+        self._refresh_log_dates()
+        self._log_date_combo.currentTextChanged.connect(self._refresh_log_files)
+        date_row.addWidget(date_label)
+        date_row.addWidget(self._log_date_combo, stretch=1)
+        log_right.addLayout(date_row)
+
+        # 统计信息卡片
+        self._log_info_label = QLabel()
+        self._refresh_log_info()
+        self._log_info_label.setWordWrap(True)
+        self._log_info_label.setStyleSheet("""
+            QLabel {
+                background-color: #F9FAFB;
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+                padding: 10px 12px;
+                font-size: 12px;
+                color: #374151;
+            }
+        """)
+        log_right.addWidget(self._log_info_label)
+
+        log_right.addStretch()
+
+        # 操作按钮区（竖向排列）
+        log_btn_col = QVBoxLayout()
+        log_btn_col.setSpacing(8)
+
         self.open_log_btn = QPushButton("📂 打开日志目录")
         self.open_log_btn.setObjectName("secondary")
+        self.open_log_btn.setMinimumHeight(34)
+        log_btn_col.addWidget(self.open_log_btn)
+
         self.delete_all_log_btn = QPushButton("🗑 清空全部日志")
-        self.delete_all_log_btn.setObjectName("danger")
-        log_btn_row.addWidget(self.open_log_btn)
-        log_btn_row.addStretch()
-        log_btn_row.addWidget(self.delete_all_log_btn)
-        log_layout.addLayout(log_btn_row)
+        self.delete_all_log_btn.setObjectName("default")
+        self.delete_all_log_btn.setMinimumHeight(34)
+        log_btn_col.addWidget(self.delete_all_log_btn)
+
+        log_right.addLayout(log_btn_col)
+
+        log_inner.addLayout(log_right, stretch=1)
 
         self.open_log_btn.clicked.connect(self._on_open_log_dir)
         self.delete_all_log_btn.clicked.connect(self._on_delete_all_logs)
@@ -226,38 +323,42 @@ class SettingsDialog(QDialog):
         # ==================== 第二行：讨论参数 | 开场白 | LMStudio ====================
 
         # --- 左下：讨论参数 ---
-        disc_group = QGroupBox("💬 讨论参数")
+        disc_group = make_group("💬 讨论参数", self._on_reset_discussion)
         disc_layout = QFormLayout(disc_group)
-        disc_layout.setSpacing(8)
+        disc_layout.setSpacing(10)
+        disc_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         disc = self.config_mgr.config.get("discussion", {})
 
         self.max_rounds_spin = QSpinBox()
         self.max_rounds_spin.setRange(1, 200)
         self.max_rounds_spin.setValue(disc.get("max_rounds", 100))
-        self.max_rounds_spin.setMinimumWidth(140)
+        self.max_rounds_spin.setMinimumWidth(160)
         disc_layout.addRow("最大轮数:", self.max_rounds_spin)
 
         self.timeout_spin = QSpinBox()
         self.timeout_spin.setRange(10, 3600)
         self.timeout_spin.setValue(disc.get("timeout_seconds", 600))
-        self.timeout_spin.setMinimumWidth(140)
+        self.timeout_spin.setMinimumWidth(160)
         disc_layout.addRow("超时(秒):", self.timeout_spin)
 
         self.start_signal_edit = QLineEdit(disc.get("start_signal", "<ok>"))
-        self.start_signal_edit.setMinimumWidth(140)
+        self.start_signal_edit.setMinimumWidth(160)
+        self.start_signal_edit.setPlaceholderText("如 <ok>")
         disc_layout.addRow("开场标识:", self.start_signal_edit)
 
         self.end_signal_edit = QLineEdit(disc.get("end_signal", "<End>"))
-        self.end_signal_edit.setMinimumWidth(140)
+        self.end_signal_edit.setMinimumWidth(160)
+        self.end_signal_edit.setPlaceholderText("如 <End>")
         disc_layout.addRow("结束标识:", self.end_signal_edit)
 
         self.arbitration_signal_edit = QLineEdit(disc.get("arbitration_signal", "<结案>"))
-        self.arbitration_signal_edit.setMinimumWidth(140)
+        self.arbitration_signal_edit.setMinimumWidth(160)
+        self.arbitration_signal_edit.setPlaceholderText("如 <结案>")
         disc_layout.addRow("结案标识:", self.arbitration_signal_edit)
 
         # 默认军师选择
         self.default_arb_combo = QComboBox()
-        self.default_arb_combo.setMinimumWidth(140)
+        self.default_arb_combo.setMinimumWidth(160)
         for p in self.config_mgr.get_ai_platforms():
             self.default_arb_combo.addItem(p["name"])
         current_arb = disc.get("arbitrator", "智谱清言")
@@ -269,7 +370,7 @@ class SettingsDialog(QDialog):
         grid.addWidget(disc_group, 1, 0)
 
         # --- 中下：开场白 ---
-        opening_group = QGroupBox("📝 开场白")
+        opening_group = make_group("📝 开场白", self._on_reset_opening)
         opening_layout = QVBoxLayout(opening_group)
 
         opening_hint = QLabel("此开场白会原样发送给每个AI。\n系统会自动在后面追加【规则】部分，无需在此填写规则。")
@@ -286,9 +387,10 @@ class SettingsDialog(QDialog):
         grid.addWidget(opening_group, 1, 1)
 
         # --- 右下：LM Studio 配置 ---
-        lm_group = QGroupBox("🧠 LM Studio 配置")
+        lm_group = make_group("🧠 LM Studio 配置", self._on_reset_lmstudio)
         lm_layout = QFormLayout(lm_group)
-        lm_layout.setSpacing(8)
+        lm_layout.setSpacing(10)
+        lm_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         lm = self.config_mgr.config.get("lm_studio", {})
 
         self.lm_enabled_cb = QCheckBox("启用 LM Studio")
@@ -297,10 +399,12 @@ class SettingsDialog(QDialog):
 
         self.lm_url_edit = QLineEdit(lm.get("url", "http://127.0.0.1:1234/v1"))
         self.lm_url_edit.setMinimumWidth(200)
+        self.lm_url_edit.setPlaceholderText("http://127.0.0.1:1234/v1")
         lm_layout.addRow("服务地址:", self.lm_url_edit)
 
         self.lm_name_edit = QLineEdit(lm.get("display_name", "MyAi"))
         self.lm_name_edit.setMinimumWidth(200)
+        self.lm_name_edit.setPlaceholderText("本地模型的显示名称")
         lm_layout.addRow("显示名称:", self.lm_name_edit)
 
         self.lm_key_edit = QLineEdit(lm.get("api_key", ""))
@@ -321,13 +425,8 @@ class SettingsDialog(QDialog):
         btn_bar = QHBoxLayout()
         btn_bar.addStretch()
 
-        self.reset_btn = QPushButton("恢复默认")
-        self.reset_btn.setObjectName("secondary")
-        self.reset_btn.clicked.connect(self._on_reset_defaults)
-        btn_bar.addWidget(self.reset_btn)
-
         self.restore_all_btn = QPushButton("恢复所有默认")
-        self.restore_all_btn.setObjectName("danger_ghost")
+        self.restore_all_btn.setObjectName("secondary")
         self.restore_all_btn.clicked.connect(self._on_restore_all_defaults)
         btn_bar.addWidget(self.restore_all_btn)
 
@@ -338,15 +437,72 @@ class SettingsDialog(QDialog):
 
         layout.addLayout(btn_bar)
 
+    # 选中平台索引（替代 QListWidget.currentRow）
+    self._platform_selected_row = -1
+
     def _refresh_platform_list(self):
-        self.platform_list.clear()
-        for p in self.config_mgr.get_ai_platforms():
-            status = "🟢" if p.get("enabled") else "⚪"
-            # 只显示域名，不显示完整URL，节省高度
+        """刷新 AI 平台列表（自定义 Widget 行）。"""
+        # 清空容器
+        layout = self._platform_container_layout
+        while layout.count():
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._platform_selected_row = -1
+
+        platforms = self.config_mgr.get_ai_platforms()
+        for i, p in enumerate(platforms):
+            row = QWidget()
+            row.setFixedHeight(28)
+            row.setCursor(Qt.CursorShape.PointingHandCursor)
+            row.setStyleSheet("""
+                QWidget {
+                    background-color: transparent;
+                    border-radius: 4px;
+                }
+                QWidget:hover {
+                    background-color: #F3F4F6;
+                }
+                QWidget[selected="true"] {
+                    background-color: #E8F2FF;
+                    border: 1px solid #007AFF;
+                }
+            """)
+
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(8, 0, 8, 0)
+            row_layout.setSpacing(6)
+
+            # 状态图标
+            status = QLabel("🟢" if p.get("enabled") else "⚪")
+            status.setFixedWidth(16)
+            status.setStyleSheet("background: transparent; border: none; font-size: 12px;")
+            row_layout.addWidget(status)
+
+            # 平台名 + 域名
             url = p.get('url', '')
-            # 提取域名
             domain = url.replace('https://', '').replace('http://', '').split('/')[0]
-            self.platform_list.addItem(f"{status} {p['name']}  ({domain})")
+            name_label = QLabel(f"{p['name']}  ({domain})")
+            name_label.setStyleSheet("font-size: 12px; color: #1D1D1F; background: transparent; border: none;")
+            row_layout.addWidget(name_label, stretch=1)
+
+            # 点击选中
+            def _select(event, idx=i, w=row):
+                # 取消之前的选中
+                if hasattr(self, '_platform_selected_widget') and self._platform_selected_widget:
+                    self._platform_selected_widget.setProperty("selected", "false")
+                    self._platform_selected_widget.style().polish(self._platform_selected_widget)
+                self._platform_selected_row = idx
+                self._platform_selected_widget = w
+                w.setProperty("selected", "true")
+                w.style().polish(w)
+            row.mousePressEvent = _select
+
+            layout.addWidget(row)
+
+    def _get_selected_platform_row(self):
+        """获取当前选中的平台行索引。"""
+        return self._platform_selected_row
 
     def _on_add_platform(self):
         """添加平台 - 弹出输入对话框。"""
@@ -378,7 +534,7 @@ class SettingsDialog(QDialog):
 
     def _on_edit_platform(self):
         """编辑平台 - 弹出选择器编辑对话框。"""
-        row = self.platform_list.currentRow()
+        row = self._get_selected_platform_row()
         platforms = self.config_mgr.get_ai_platforms()
         if row < 0 or row >= len(platforms):
             self._show_toast("请先选择一个平台。")
@@ -394,7 +550,7 @@ class SettingsDialog(QDialog):
     def _on_delete_platform(self):
         """删除平台（内置5个AI不允许删除）。"""
         BUILTIN_AIS = {"DeepSeek", "智谱清言", "通义千问", "MiniMax", "Kimi"}
-        row = self.platform_list.currentRow()
+        row = self._get_selected_platform_row()
         platforms = self.config_mgr.get_ai_platforms()
         if row < 0 or row >= len(platforms):
             return
@@ -411,7 +567,7 @@ class SettingsDialog(QDialog):
 
     def _on_toggle_platform(self):
         """启用/禁用选中的平台。"""
-        row = self.platform_list.currentRow()
+        row = self._get_selected_platform_row()
         platforms = self.config_mgr.get_ai_platforms()
         if row < 0 or row >= len(platforms):
             self._show_toast("请先选择一个平台。")
@@ -443,11 +599,43 @@ class SettingsDialog(QDialog):
         self.accept()
 
     def _on_reset_defaults(self):
-        """恢复讨论参数和开场白为默认值。"""
+        """恢复讨论参数和开场白为默认值（旧版兼容，现在由各模块独立按钮替代）。"""
+        self._on_reset_discussion()
+        self._on_reset_opening()
+
+    def _on_reset_platform(self):
+        """恢复 AI 平台为默认配置。"""
+        reply = QMessageBox.question(
+            self, "恢复默认",
+            "确定要将 AI 平台恢复为默认配置吗？\n\n"
+            "• 内置平台（DeepSeek、智谱清言、通义千问、MiniMax、Kimi）将恢复默认选择器\n"
+            "• 你手动添加的自定义平台不受影响"
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        import copy
+        from config_manager import DEFAULT_CONFIG, DEFAULT_CONFIG_VERSION
+        default_names = {"DeepSeek", "智谱清言", "通义千问", "MiniMax", "Kimi"}
+        user_custom_platforms = [
+            dict(p) for p in self.config_mgr.config.get("ai_platforms", [])
+            if p.get("name") not in default_names
+        ]
+        new_config = copy.deepcopy(DEFAULT_CONFIG)
+        if user_custom_platforms:
+            new_config["ai_platforms"].extend(user_custom_platforms)
+        new_config["config_version"] = DEFAULT_CONFIG_VERSION
+        self.config_mgr.config = new_config
+        self.config_mgr.save()
+        self._refresh_platform_list()
+        self._show_toast("AI 平台已恢复默认，请重启应用生效")
+        log_info("已恢复 AI 平台为默认配置")
+
+    def _on_reset_discussion(self):
+        """恢复讨论参数为默认值。"""
         from config_manager import DEFAULT_CONFIG
         reply = QMessageBox.question(
             self, "恢复默认",
-            "确定要将讨论参数和开场白恢复为默认值吗？\n（AI 平台和 LM Studio 配置不受影响）"
+            "确定要将讨论参数恢复为默认值吗？"
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
@@ -457,8 +645,44 @@ class SettingsDialog(QDialog):
         self.start_signal_edit.setText(default_disc.get("start_signal", "<ok>"))
         self.end_signal_edit.setText(default_disc.get("end_signal", "<End>"))
         self.arbitration_signal_edit.setText(default_disc.get("arbitration_signal", "<结案>"))
+        # 恢复默认军师
+        arb_name = default_disc.get("arbitrator", "DeepSeek")
+        idx = self.default_arb_combo.findText(arb_name)
+        if idx >= 0:
+            self.default_arb_combo.setCurrentIndex(idx)
+        self._show_toast("讨论参数已恢复默认")
+        log_info("已恢复讨论参数为默认值")
+
+    def _on_reset_opening(self):
+        """恢复开场白为默认值。"""
+        from config_manager import DEFAULT_CONFIG
+        reply = QMessageBox.question(
+            self, "恢复默认",
+            "确定要将开场白恢复为默认值吗？"
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        default_disc = DEFAULT_CONFIG.get("discussion", {})
         self.opening_edit.setText(default_disc.get("opening_remarks", ""))
-        log_info("已恢复讨论参数和开场白为默认值")
+        self._show_toast("开场白已恢复默认")
+        log_info("已恢复开场白为默认值")
+
+    def _on_reset_lmstudio(self):
+        """恢复 LM Studio 配置为默认值。"""
+        from config_manager import DEFAULT_CONFIG
+        reply = QMessageBox.question(
+            self, "恢复默认",
+            "确定要将 LM Studio 配置恢复为默认值吗？"
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        lm = DEFAULT_CONFIG.get("lm_studio", {})
+        self.lm_enabled_cb.setChecked(lm.get("enabled", False))
+        self.lm_url_edit.setText(lm.get("url", "http://127.0.0.1:1234/v1"))
+        self.lm_name_edit.setText(lm.get("display_name", "MyAi"))
+        self.lm_key_edit.setText(lm.get("api_key", ""))
+        self._show_toast("LM Studio 配置已恢复默认")
+        log_info("已恢复 LM Studio 配置为默认值")
 
     def _on_restore_all_defaults(self):
         """恢复所有默认配置（包括 AI 平台、讨论参数、LM Studio 等）。
@@ -537,10 +761,15 @@ class SettingsDialog(QDialog):
             self._log_date_combo.setCurrentIndex(0)
 
     def _refresh_log_files(self):
-        """根据选中的日期刷新文件列表。"""
-        if not hasattr(self, '_log_tree'):
+        """根据选中的日期刷新文件列表（自定义 Widget 行）。"""
+        if not hasattr(self, '_log_file_layout'):
             return
-        self._log_tree.clear()
+        # 清空容器
+        layout = self._log_file_layout
+        while layout.count():
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
 
         date_str = self._log_date_combo.currentData()
         if not date_str:
@@ -550,51 +779,59 @@ class SettingsDialog(QDialog):
         if not files:
             return
 
-        from PyQt6.QtWidgets import QTreeWidgetItem
-
         # 分组
         op_files = [f for f in files if f["type"] == "操作日志"]
         disc_files = [f for f in files if f["type"] == "讨论记录"]
 
-        # 操作日志组
+        def _add_group(icon, title, file_list):
+            # 组标题行
+            header = QWidget()
+            header.setFixedHeight(26)
+            h_layout = QHBoxLayout(header)
+            h_layout.setContentsMargins(8, 0, 8, 0)
+            h_layout.setSpacing(4)
+            h_icon = QLabel(icon)
+            h_icon.setStyleSheet("background: transparent; border: none; font-size: 12px;")
+            h_layout.addWidget(h_icon)
+            h_title = QLabel(title)
+            h_title.setStyleSheet("font-size: 11px; font-weight: 600; color: #6B7280; background: transparent; border: none;")
+            h_layout.addWidget(h_title)
+            h_layout.addStretch()
+            layout.addWidget(header)
+            # 文件行
+            for f in file_list:
+                row = QWidget()
+                row.setFixedHeight(26)
+                row.setCursor(Qt.CursorShape.PointingHandCursor)
+                row.setStyleSheet("""
+                    QWidget { background-color: transparent; border-radius: 4px; }
+                    QWidget:hover { background-color: #F3F4F6; }
+                """)
+                r_layout = QHBoxLayout(row)
+                r_layout.setContentsMargins(24, 0, 8, 0)  # 缩进表示子项
+                r_layout.setSpacing(6)
+                fname = QLabel(f["name"])
+                fname.setStyleSheet("font-size: 12px; color: #374151; background: transparent; border: none;")
+                r_layout.addWidget(fname, stretch=1)
+                size_label = QLabel(self._format_size(f["size"]))
+                size_label.setFixedWidth(55)
+                size_label.setStyleSheet("font-size: 11px; color: #9CA3AF; background: transparent; border: none;")
+                size_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                r_layout.addWidget(size_label)
+                # 双击查看
+                filepath = str(f["path"])
+                def _dbl(event, fp=filepath):
+                    self._on_log_file_double_clicked(fp)
+                row.mouseDoubleClickEvent = _dbl
+                layout.addWidget(row)
+
         if op_files:
-            op_root = QTreeWidgetItem(["📁 操作日志", "", ""])
-            for f in op_files:
-                size_str = self._format_size(f["size"])
-                child = QTreeWidgetItem([f["name"], size_str, "🗑"])
-                child.setData(0, 0x0100, str(f["path"]))  # 存储文件路径
-                op_root.addChild(child)
-            self._log_tree.addTopLevelItem(op_root)
-            op_root.setExpanded(True)
-
-        # 讨论记录组
+            _add_group("📁", "操作日志", op_files)
         if disc_files:
-            disc_root = QTreeWidgetItem(["💬 讨论记录", "", ""])
-            for f in disc_files:
-                size_str = self._format_size(f["size"])
-                child = QTreeWidgetItem([f["name"], size_str, "🗑"])
-                child.setData(0, 0x0100, str(f["path"]))
-                disc_root.addChild(child)
-            self._log_tree.addTopLevelItem(disc_root)
-            disc_root.setExpanded(True)
+            _add_group("💬", "讨论记录", disc_files)
 
-    @staticmethod
-    def _format_size(size: int) -> str:
-        """格式化文件大小。"""
-        if size < 1024:
-            return f"{size} B"
-        elif size < 1024 * 1024:
-            return f"{size / 1024:.1f} KB"
-        else:
-            return f"{size / 1024 / 1024:.1f} MB"
-
-    def _on_log_item_double_clicked(self, item, column):
+    def _on_log_file_double_clicked(self, filepath: str):
         """双击文件查看内容。"""
-        # 只处理子节点（文件），不处理分组节点
-        filepath = item.data(0, 0x0100)
-        if not filepath:
-            return
-
         try:
             with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
                 content = f.read()
@@ -610,9 +847,9 @@ class SettingsDialog(QDialog):
                 content = self._format_discussion_json(data)
                 title = f"讨论记录 - {data.get('topic', '未知')[:30]}"
             except Exception:
-                title = item.text(0)
+                title = os.path.basename(filepath)
         else:
-            title = f"日志 - {item.text(0)}"
+            title = f"日志 - {os.path.basename(filepath)}"
 
         dialog = QDialog(self)
         dialog.setWindowTitle(title)
@@ -634,6 +871,16 @@ class SettingsDialog(QDialog):
         dialog_layout.addWidget(close_btn)
 
         dialog.exec()
+
+    @staticmethod
+    def _format_size(size: int) -> str:
+        """格式化文件大小。"""
+        if size < 1024:
+            return f"{size} B"
+        elif size < 1024 * 1024:
+            return f"{size / 1024:.1f} KB"
+        else:
+            return f"{size / 1024 / 1024:.1f} MB"
 
     @staticmethod
     def _format_discussion_json(data: dict) -> str:

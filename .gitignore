@@ -8,6 +8,7 @@ __pycache__/
 dist/
 build/
 *.spec.bak
+*.spec
 
 # 虚拟环境
 venv/
@@ -47,3 +48,6 @@ test-results/
 # 临时文件
 tmp/
 temp/
+
+# 本地文档（不同步到 GitHub）
+HelpWord/
