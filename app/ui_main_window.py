@@ -917,42 +917,64 @@ class SettingsDialog(QDialog):
             return
 
         # 如果是 JSON 讨论记录，格式化展示
-        if filepath.endswith('.json'):
+        is_json = filepath.endswith('.json')
+        if is_json:
             try:
-                import json
-                data = json.loads(content)
-                content = self._format_discussion_json(data)
+                import json as _json
+                data = _json.loads(content)
+                formatted = self._format_discussion_json(data)
                 title = f"讨论记录 - {data.get('topic', '未知')[:30]}"
             except Exception:
+                is_json = False
+                formatted = content
                 title = os.path.basename(filepath)
         else:
+            formatted = content
             title = f"日志 - {os.path.basename(filepath)}"
 
         dialog = QDialog(self)
         dialog.setWindowTitle(title)
-        dialog.resize(800, 600)
+        # 使用屏幕 85% 大小，确保内容完整可见
+        screen = QApplication.primaryScreen().availableGeometry()
+        dialog.resize(int(screen.width() * 0.85), int(screen.height() * 0.85))
         from ui_styles import GLOBAL_QSS
         dialog.setStyleSheet(GLOBAL_QSS)
         dialog_layout = QVBoxLayout(dialog)
-        dialog_layout.setContentsMargins(8, 8, 8, 8)
+        dialog_layout.setContentsMargins(10, 10, 10, 10)
 
         viewer = QTextEdit()
         viewer.setReadOnly(True)
         viewer.setAcceptRichText(False)
-        # 跨平台等宽字体: macOS用Menlo, Windows用Consolas, Linux用DejaVu Sans Mono
-        viewer.setStyleSheet(
-            "background-color: #1E1E1E; color: #D4D4D4; "
-            "font-family: 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Courier New', monospace; "
-            "font-size: 13px; line-height: 1.6;"
-        )
-        viewer.setPlainText(content)
+        viewer.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        viewer.setPlainText(formatted)
+        # 跨平台等宽字体 + 舒适字号行距
+        viewer.setStyleSheet("""
+            QTextEdit {
+                background-color: #1E1E1E;
+                color: #D4D4D4;
+                font-family: 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Courier New', monospace;
+                font-size: 14px;
+                padding: 12px;
+                border: none;
+            }
+        """)
+        # 跳转到顶部
+        viewer.verticalScrollBar().setValue(0)
         dialog_layout.addWidget(viewer)
+
+        button_row = QHBoxLayout()
+        # 字数统计
+        info_label = QLabel(f"共 {len(formatted)} 字  |  文件: {os.path.basename(filepath)}")
+        info_label.setStyleSheet("font-size: 11px; color: #9CA3AF;")
+        button_row.addWidget(info_label)
+        button_row.addStretch()
 
         close_btn = QPushButton("关闭")
         close_btn.setObjectName("secondary")
         close_btn.setFixedHeight(28)
         close_btn.clicked.connect(dialog.accept)
-        dialog_layout.addWidget(close_btn)
+        button_row.addWidget(close_btn)
+        dialog_layout.addLayout(button_row)
 
         dialog.exec()
 
