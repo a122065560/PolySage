@@ -206,8 +206,8 @@ class SettingsDialog(QDialog):
         self.toggle_btn = QPushButton("启用/禁用")
         self.delete_btn = QPushButton("删除")
         for btn in [self.add_btn, self.edit_btn, self.toggle_btn, self.delete_btn]:
-            btn.setObjectName("default")
-            btn.setFixedHeight(26)
+            btn.setObjectName("secondary")
+            btn.setFixedHeight(24)
         btn_row.addWidget(self.add_btn)
         btn_row.addWidget(self.edit_btn)
         btn_row.addWidget(self.toggle_btn)
@@ -256,12 +256,7 @@ class SettingsDialog(QDialog):
         """)
         log_left.addWidget(log_scroll)
 
-        # 双击提示
-        hint_label = QLabel("💡 双击文件查看内容")
-        hint_label.setStyleSheet("font-size: 11px; color: #9CA3AF;")
-        log_left.addWidget(hint_label)
-
-        log_inner.addLayout(log_left, stretch=3)
+        log_inner.addLayout(log_left, stretch=2)
 
         # ---- 右半侧：日期选择 + 日志信息 + 按钮 ----
         log_right = QVBoxLayout()
@@ -297,23 +292,23 @@ class SettingsDialog(QDialog):
         """)
         log_right.addWidget(self._log_info_label)
 
-        log_right.addStretch()
-
         # 操作按钮区（竖向排列）
         log_btn_col = QVBoxLayout()
         log_btn_col.setSpacing(6)
 
         self.open_log_btn = QPushButton("📂 打开日志目录")
-        self.open_log_btn.setObjectName("default")
-        self.open_log_btn.setFixedHeight(26)
+        self.open_log_btn.setObjectName("secondary")
+        self.open_log_btn.setFixedHeight(24)
         log_btn_col.addWidget(self.open_log_btn)
 
         self.delete_all_log_btn = QPushButton("🗑 清空全部日志")
-        self.delete_all_log_btn.setObjectName("default")
-        self.delete_all_log_btn.setFixedHeight(26)
+        self.delete_all_log_btn.setObjectName("secondary")
+        self.delete_all_log_btn.setFixedHeight(24)
         log_btn_col.addWidget(self.delete_all_log_btn)
 
         log_right.addLayout(log_btn_col)
+
+        log_right.addStretch()
 
         log_inner.addLayout(log_right, stretch=1)
 
@@ -476,6 +471,65 @@ class SettingsDialog(QDialog):
         # 选中平台索引（替代 QListWidget.currentRow）
         self._platform_selected_row = -1
 
+    # ---- 统一列表行构建 ----
+
+    def _build_list_row(self, text, size_text=None, icon=None, indent=0,
+                         selected=False, on_dblclick=None, on_delete=None):
+        """创建统一风格的列表行。"""
+        row = QWidget()
+        row.setFixedHeight(26)
+        row.setCursor(Qt.CursorShape.PointingHandCursor)
+        row.setStyleSheet("""
+            QWidget {
+                background-color: transparent;
+                border-radius: 4px;
+            }
+            QWidget:hover {
+                background-color: #F3F4F6;
+            }
+        """)
+
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(8 + indent, 0, 4, 0)
+        layout.setSpacing(6)
+
+        if icon:
+            icon_label = QLabel(icon)
+            icon_label.setFixedWidth(16)
+            icon_label.setStyleSheet("background: transparent; border: none; font-size: 12px;")
+            layout.addWidget(icon_label)
+
+        text_label = QLabel(text)
+        text_label.setStyleSheet("font-size: 12px; color: #1D1D1F; background: transparent; border: none;")
+        text_label.setWordWrap(False)
+        layout.addWidget(text_label, stretch=1)
+
+        if size_text:
+            size_label = QLabel(size_text)
+            size_label.setFixedWidth(45)
+            size_label.setStyleSheet("font-size: 11px; color: #9CA3AF; background: transparent; border: none;")
+            size_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            layout.addWidget(size_label)
+
+        if on_delete:
+            del_btn = QPushButton("×")
+            del_btn.setFixedSize(18, 18)
+            del_btn.setStyleSheet("""
+                QPushButton {
+                    background: transparent; border: none; color: #C0C0C5;
+                    font-size: 14px; font-weight: bold; padding: 0;
+                }
+                QPushButton:hover { color: #FF3B30; }
+            """)
+            del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            del_btn.clicked.connect(on_delete)
+            layout.addWidget(del_btn)
+
+        if on_dblclick:
+            row.mouseDoubleClickEvent = lambda e, cb=on_dblclick: cb()
+
+        return row
+
     def _refresh_platform_list(self):
         """刷新 AI 平台列表（自定义 Widget 行）。"""
         # 清空容器
@@ -488,52 +542,16 @@ class SettingsDialog(QDialog):
 
         platforms = self.config_mgr.get_ai_platforms()
         for i, p in enumerate(platforms):
-            row = QWidget()
-            row.setFixedHeight(28)
-            row.setCursor(Qt.CursorShape.PointingHandCursor)
-            row.setStyleSheet("""
-                QWidget {
-                    background-color: transparent;
-                    border-radius: 4px;
-                }
-                QWidget:hover {
-                    background-color: #F3F4F6;
-                }
-                QWidget[selected="true"] {
-                    background-color: #E8F2FF;
-                    border: 1px solid #007AFF;
-                }
-            """)
-
-            row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(8, 0, 8, 0)
-            row_layout.setSpacing(6)
-
-            # 状态图标
-            status = QLabel("🟢" if p.get("enabled") else "⚪")
-            status.setFixedWidth(16)
-            status.setStyleSheet("background: transparent; border: none; font-size: 12px;")
-            row_layout.addWidget(status)
-
-            # 平台名 + 域名
             url = p.get('url', '')
             domain = url.replace('https://', '').replace('http://', '').split('/')[0]
-            name_label = QLabel(f"{p['name']}  ({domain})")
-            name_label.setStyleSheet("font-size: 12px; color: #1D1D1F; background: transparent; border: none;")
-            row_layout.addWidget(name_label, stretch=1)
+            icon = "🟢" if p.get("enabled") else "⚪"
+            text = f"{p['name']}  ({domain})"
 
-            # 点击选中
-            def _select(event, idx=i, w=row):
-                # 取消之前的选中
-                if hasattr(self, '_platform_selected_widget') and self._platform_selected_widget:
-                    self._platform_selected_widget.setProperty("selected", "false")
-                    self._platform_selected_widget.style().polish(self._platform_selected_widget)
-                self._platform_selected_row = idx
-                self._platform_selected_widget = w
-                w.setProperty("selected", "true")
-                w.style().polish(w)
-            row.mousePressEvent = _select
-
+            row = self._build_list_row(
+                text=text, icon=icon,
+                on_dblclick=lambda idx=i: self._on_edit_platform(idx),
+                on_delete=lambda idx=i: self._delete_platform_at(idx)
+            )
             layout.addWidget(row)
 
     def _get_selected_platform_row(self):
@@ -568,15 +586,16 @@ class SettingsDialog(QDialog):
         else:
             self._show_toast(f"添加失败：名称 '{name}' 可能已存在。")
 
-    def _on_edit_platform(self):
+    def _on_edit_platform(self, idx=None):
         """编辑平台 - 弹出选择器编辑对话框。"""
-        row = self._get_selected_platform_row()
         platforms = self.config_mgr.get_ai_platforms()
-        if row < 0 or row >= len(platforms):
+        if idx is None:
+            idx = self._get_selected_platform_row()
+        if idx < 0 or idx >= len(platforms):
             self._show_toast("请先选择一个平台。")
             return
 
-        platform = platforms[row]
+        platform = platforms[idx]
         dialog = PlatformEditDialog(platform, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             updated = dialog.get_platform()
@@ -591,6 +610,23 @@ class SettingsDialog(QDialog):
         if row < 0 or row >= len(platforms):
             return
         name = platforms[row]["name"]
+        if name in BUILTIN_AIS:
+            QMessageBox.warning(self, "无法删除", f"'{name}' 是内置 AI，不允许删除。\n您可以禁用它（取消启用）。")
+            return
+        reply = QMessageBox.question(
+            self, "确认删除", f"确定要删除 '{name}' 吗？"
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.config_mgr.delete_platform(name)
+            self._refresh_platform_list()
+
+    def _delete_platform_at(self, idx):
+        """删除指定索引的平台（行尾×按钮调用）。"""
+        BUILTIN_AIS = {"DeepSeek", "智谱清言", "通义千问", "MiniMax", "Kimi"}
+        platforms = self.config_mgr.get_ai_platforms()
+        if idx < 0 or idx >= len(platforms):
+            return
+        name = platforms[idx]["name"]
         if name in BUILTIN_AIS:
             QMessageBox.warning(self, "无法删除", f"'{name}' 是内置 AI，不允许删除。\n您可以禁用它（取消启用）。")
             return
@@ -834,37 +870,32 @@ class SettingsDialog(QDialog):
             h_layout.addWidget(h_title)
             h_layout.addStretch()
             layout.addWidget(header)
-            # 文件行
+            # 文件行（统一用 _build_list_row）
             for f in file_list:
-                row = QWidget()
-                row.setFixedHeight(26)
-                row.setCursor(Qt.CursorShape.PointingHandCursor)
-                row.setStyleSheet("""
-                    QWidget { background-color: transparent; border-radius: 4px; }
-                    QWidget:hover { background-color: #F3F4F6; }
-                """)
-                r_layout = QHBoxLayout(row)
-                r_layout.setContentsMargins(24, 0, 8, 0)  # 缩进表示子项
-                r_layout.setSpacing(6)
-                fname = QLabel(f["name"])
-                fname.setStyleSheet("font-size: 12px; color: #374151; background: transparent; border: none;")
-                r_layout.addWidget(fname, stretch=1)
-                size_label = QLabel(self._format_size(f["size"]))
-                size_label.setFixedWidth(55)
-                size_label.setStyleSheet("font-size: 11px; color: #9CA3AF; background: transparent; border: none;")
-                size_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                r_layout.addWidget(size_label)
-                # 双击查看
                 filepath = str(f["path"])
-                def _dbl(event, fp=filepath):
-                    self._on_log_file_double_clicked(fp)
-                row.mouseDoubleClickEvent = _dbl
+                size_text = self._format_size(f["size"])
+                row = self._build_list_row(
+                    text=f["name"], size_text=size_text, indent=24,
+                    on_dblclick=lambda fp=filepath: self._on_log_file_double_clicked(fp),
+                    on_delete=lambda fp=filepath: self._delete_log_file(fp)
+                )
                 layout.addWidget(row)
 
         if op_files:
             _add_group("📁", "操作日志", op_files)
         if disc_files:
             _add_group("💬", "讨论记录", disc_files)
+
+    def _delete_log_file(self, filepath):
+        """删除单个日志文件。"""
+        import os
+        try:
+            os.remove(filepath)
+            log_info(f"已删除日志文件: {filepath}")
+            self._refresh_log_files()
+            self._refresh_log_info()
+        except Exception as e:
+            self._show_toast(f"删除失败: {e}")
 
     def _on_log_file_double_clicked(self, filepath: str):
         """双击文件查看内容。"""
