@@ -34,10 +34,11 @@ test_python() {
     local py_path="$1"
     local py_home="$2"
 
+    # 必须能真正加载 Qt 模块(不只是 import __init__)
     if [ -n "$py_home" ]; then
-        env -u PYTHONPATH PYTHONHOME="$py_home" "$py_path" -c "import PyQt6" 2>/dev/null
+        env -u PYTHONPATH PYTHONHOME="$py_home" "$py_path" -c "from PyQt6 import QtWidgets, QtCore; print('OK')" 2>/dev/null
     else
-        env -u PYTHONHOME -u PYTHONPATH "$py_path" -c "import PyQt6" 2>/dev/null
+        env -u PYTHONHOME -u PYTHONPATH "$py_path" -c "from PyQt6 import QtWidgets, QtCore; print('OK')" 2>/dev/null
     fi
 }
 
