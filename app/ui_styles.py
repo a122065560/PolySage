@@ -267,7 +267,7 @@ QTextEdit, QLineEdit, QPlainTextEdit {{
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};
     border-radius: 8px;
-    padding: 8px 10px;
+    padding: 6px 10px;
     font-size: 13px;
     selection-background-color: {ACCENT_LIGHT};
 }}
@@ -317,8 +317,8 @@ QTextEdit:focus, QLineEdit:focus, QPlainTextEdit:focus {{
 
 /* ===== 下拉框 ===== */
 QComboBox {{
-    min-height: 34px;
-    padding: 6px 12px;
+    min-height: 28px;
+    padding: 4px 12px;
     background-color: {BG_PANEL};
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};
@@ -530,8 +530,8 @@ QCheckBox::indicator:checked {{
 
 /* ===== SpinBox ===== */
 QSpinBox {{
-    min-height: 32px;
-    padding: 5px 10px;
+    min-height: 28px;
+    padding: 4px 10px;
     background-color: {BG_INPUT};
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};

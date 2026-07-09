@@ -8,7 +8,8 @@ __pycache__/
 dist/
 build/
 *.spec.bak
-*.spec
+# PyInstaller 自动生成的 spec（PolySage.spec 是 Windows CI 用的，需要保留）
+聚慧.spec
 
 # 虚拟环境
 venv/
