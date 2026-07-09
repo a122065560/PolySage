@@ -495,14 +495,16 @@ QGroupBox {{
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER_LIGHT};
     border-radius: 10px;
-    margin-top: 12px;
-    padding: 16px 12px 12px 12px;
+    margin-top: 20px;
+    padding: 26px 12px 12px 12px;
     font-weight: 600;
-    font-size: 13px;
+    font-size: 14px;
 }}
 QGroupBox::title {{
     subcontrol-origin: margin;
-    left: 12px;
+    subcontrol-position: top left;
+    left: 14px;
+    top: 4px;
     padding: 0 6px;
     color: {TEXT_PRIMARY};
 }}

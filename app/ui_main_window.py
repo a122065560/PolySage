@@ -125,47 +125,22 @@ class SettingsDialog(QDialog):
             }
         """
 
-        def make_group(title: str, reset_callback=None) -> QGroupBox:
-            """创建带标题的 GroupBox，可选在标题右侧添加「恢复默认」小按钮。"""
-            group = QGroupBox("")
-            group.setStyleSheet("""
-                QGroupBox {
-                    border: 1px solid #E5E5EA;
-                    border-radius: 10px;
-                    margin-top: 14px;
-                    padding: 22px 12px 12px 12px;
-                    font-size: 13px;
-                    font-weight: 600;
-                    color: #1D1D1F;
-                }
-            """)
-            # 自定义标题栏（浮在边框上方）
-            title_bar = QWidget(group)
-            title_bar.setStyleSheet("background: transparent;")
-            title_bar.setGeometry(6, 0, 800, 20)
-            title_bar.move(6, -10)
-            tb_layout = QHBoxLayout(title_bar)
-            tb_layout.setContentsMargins(6, 0, 6, 0)
-            tb_layout.setSpacing(6)
-            title_label = QLabel(title)
-            title_label.setStyleSheet(f"""
-                QLabel {{
-                    font-weight: 600;
-                    font-size: 13px;
-                    color: {TEXT_PRIMARY};
-                    background: {BG_WINDOW};
-                    padding: 0 4px;
-                }}
-            """)
-            tb_layout.addWidget(title_label)
-            tb_layout.addStretch()
+        def make_group(title: str, reset_callback=None):
+            """创建带标题的 GroupBox，可选「恢复默认」按钮放在内容区顶部。"""
+            group = QGroupBox(title)
+            # 「恢复默认」按钮放在内容区顶部右侧
             if reset_callback:
+                header = QWidget()
+                header.setStyleSheet("background: transparent;")
+                header_layout = QHBoxLayout(header)
+                header_layout.setContentsMargins(0, 0, 0, 6)
+                header_layout.addStretch()
                 reset_btn = QPushButton("恢复默认")
                 reset_btn.setStyleSheet(RESET_BTN_STYLE)
                 reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 reset_btn.clicked.connect(reset_callback)
-                tb_layout.addWidget(reset_btn)
-            group.title_bar = title_bar  # 防止被GC回收
+                header_layout.addWidget(reset_btn)
+                group._reset_header = header
             return group
 
         # 3列网格布局，2行
@@ -183,6 +158,8 @@ class SettingsDialog(QDialog):
         platform_group = make_group("🤖 AI 平台管理", self._on_reset_platform)
         platform_layout = QVBoxLayout(platform_group)
         platform_layout.setSpacing(0)
+        if hasattr(platform_group, '_reset_header'):
+            platform_layout.addWidget(platform_group._reset_header)
 
         # 用 QWidget 容器 + QVBoxLayout 替代 QListWidget，行高紧凑（参考主界面AI芯片28px）
         self._platform_container = QWidget()
@@ -330,6 +307,8 @@ class SettingsDialog(QDialog):
         disc_layout = QFormLayout(disc_group)
         disc_layout.setSpacing(10)
         disc_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        if hasattr(disc_group, '_reset_header'):
+            disc_layout.addRow(disc_group._reset_header)
         disc = self.config_mgr.config.get("discussion", {})
 
         self.max_rounds_spin = QSpinBox()
@@ -375,6 +354,8 @@ class SettingsDialog(QDialog):
         # --- 中下：开场白 ---
         opening_group = make_group("📝 开场白", self._on_reset_opening)
         opening_layout = QVBoxLayout(opening_group)
+        if hasattr(opening_group, '_reset_header'):
+            opening_layout.addWidget(opening_group._reset_header)
 
         opening_hint = QLabel("此开场白会原样发送给每个AI。\n系统会自动在后面追加【规则】部分，无需在此填写规则。")
         opening_hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
@@ -394,6 +375,8 @@ class SettingsDialog(QDialog):
         lm_layout = QFormLayout(lm_group)
         lm_layout.setSpacing(10)
         lm_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        if hasattr(lm_group, '_reset_header'):
+            lm_layout.addRow(lm_group._reset_header)
         lm = self.config_mgr.config.get("lm_studio", {})
 
         self.lm_enabled_cb = QCheckBox("启用 LM Studio")
