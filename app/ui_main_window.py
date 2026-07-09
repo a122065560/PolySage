@@ -132,17 +132,20 @@ class SettingsDialog(QDialog):
                 QGroupBox {
                     border: 1px solid #E5E5EA;
                     border-radius: 10px;
-                    margin-top: 16px;
-                    padding: 20px 12px 12px 12px;
+                    margin-top: 14px;
+                    padding: 22px 12px 12px 12px;
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: #1D1D1F;
                 }
             """)
             # 自定义标题栏（浮在边框上方）
             title_bar = QWidget(group)
             title_bar.setStyleSheet("background: transparent;")
-            title_bar.setGeometry(8, 2, 600, 22)
-            title_bar.move(8, -8)
+            title_bar.setGeometry(6, 0, 800, 20)
+            title_bar.move(6, -10)
             tb_layout = QHBoxLayout(title_bar)
-            tb_layout.setContentsMargins(4, 0, 4, 0)
+            tb_layout.setContentsMargins(6, 0, 6, 0)
             tb_layout.setSpacing(6)
             title_label = QLabel(title)
             title_label.setStyleSheet(f"""
