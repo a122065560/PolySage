@@ -43,6 +43,14 @@ echo -e "${YELLOW}  ⏳ 检查项目依赖...${NC}"
 python3 -m pip install -r requirements.txt --break-system-packages -q 2>&1 | tail -3
 echo -e "${GREEN}  ✅ 项目依赖已就绪${NC}"
 
+# 下载 Playwright Chromium 到包目录（PLAYWRIGHT_BROWSERS_PATH=0，供 PyInstaller 打包）
+echo -e "${YELLOW}  ⏳ 下载 Playwright Chromium 到包目录...${NC}"
+PLAYWRIGHT_BROWSERS_PATH=0 python3 -m playwright install chromium 2>&1 | tail -3
+echo -e "${GREEN}  ✅ Chromium 已下载到 Playwright 包目录${NC}"
+
+# 计算 Playwright 浏览器路径（供 --add-data 显式打包）
+PW_BROWSERS=$(python3 -c "import playwright, os; b=os.path.join(os.path.dirname(playwright.__file__), 'driver', 'package', '.local-browsers'); print(b if os.path.isdir(b) else '')" 2>/dev/null || echo "")
+
 # 检查 PyInstaller
 if ! python3 -c "import PyInstaller" 2>/dev/null; then
     echo -e "${YELLOW}  ⏳ 安装 PyInstaller...${NC}"
@@ -113,6 +121,7 @@ python3 -m PyInstaller \
     --collect-submodules PyQt6 \
     --collect-binaries PyQt6 \
     --collect-all playwright \
+    $([ -n "$PW_BROWSERS" ] && echo "--add-data \"${PW_BROWSERS}:playwright/driver/package/.local-browsers\"") \
     --collect-data qasync \
     --copy-metadata openai \
     --copy-metadata qasync \
