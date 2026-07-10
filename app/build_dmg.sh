@@ -43,13 +43,12 @@ echo -e "${YELLOW}  ⏳ 检查项目依赖...${NC}"
 python3 -m pip install -r requirements.txt --break-system-packages -q 2>&1 | tail -3
 echo -e "${GREEN}  ✅ 项目依赖已就绪${NC}"
 
-# 下载 Playwright Chromium 到包目录（PLAYWRIGHT_BROWSERS_PATH=0，供 PyInstaller 打包）
-echo -e "${YELLOW}  ⏳ 下载 Playwright Chromium 到包目录...${NC}"
-PLAYWRIGHT_BROWSERS_PATH=0 python3 -m playwright install chromium 2>&1 | tail -3
-echo -e "${GREEN}  ✅ Chromium 已下载到 Playwright 包目录${NC}"
-
-# 计算 Playwright 浏览器路径（供 --add-data 显式打包）
-PW_BROWSERS=$(python3 -c "import playwright, os; b=os.path.join(os.path.dirname(playwright.__file__), 'driver', 'package', '.local-browsers'); print(b if os.path.isdir(b) else '')" 2>/dev/null || echo "")
+# 下载 Playwright Chromium 到临时目录（避免 PyInstaller collect_all 处理 Mach-O 二进制失败）
+echo -e "${YELLOW}  ⏳ 下载 Playwright Chromium...${NC}"
+PW_BROWSERS_TMP="/tmp/pw-chromium-cache"
+rm -rf "$PW_BROWSERS_TMP"
+PLAYWRIGHT_BROWSERS_PATH="$PW_BROWSERS_TMP" python3 -m playwright install chromium 2>&1 | tail -3
+echo -e "${GREEN}  ✅ Chromium 已下载到临时目录${NC}"
 
 # 检查 PyInstaller
 if ! python3 -c "import PyInstaller" 2>/dev/null; then
@@ -121,7 +120,6 @@ python3 -m PyInstaller \
     --collect-submodules PyQt6 \
     --collect-binaries PyQt6 \
     --collect-all playwright \
-    $([ -n "$PW_BROWSERS" ] && echo "--add-data=${PW_BROWSERS}:playwright/driver/package/.local-browsers") \
     --collect-data qasync \
     --copy-metadata openai \
     --copy-metadata qasync \
@@ -224,6 +222,17 @@ fi
 # Playwright driver 已由 PyInstaller --collect-all 正确放到 Frameworks/playwright/driver
 # 无需额外复制（旧逻辑 cp -r 到 _internal 会导致 driver/driver 嵌套重复 +99MB）
 echo -e "${GREEN}  ✅ Playwright driver 已就绪（PyInstaller 自动放置）${NC}"
+
+# 复制 Playwright Chromium 浏览器到 .app 包内
+# （单独复制而非 PyInstaller 打包，避免 collect_all 处理 Mach-O 二进制失败）
+BROWSER_DEST="$APP_FW/playwright/driver/package/.local-browsers"
+if [ -d "$PW_BROWSERS_TMP" ]; then
+    mkdir -p "$BROWSER_DEST"
+    cp -R "$PW_BROWSERS_TMP"/* "$BROWSER_DEST/"
+    echo -e "${GREEN}  ✅ Chromium 浏览器已复制到 .app 包内${NC}"
+else
+    echo -e "${YELLOW}  ⚠️  Chromium 未下载，内置浏览器可能不可用${NC}"
+fi
 
 # 清理 PyInstaller 创建的断裂符号链接（指向已删除 framework 的链接）
 find "$APP_FW" -type l ! -exec test -e {} \; -delete 2>/dev/null || true
