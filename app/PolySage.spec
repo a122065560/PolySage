@@ -21,6 +21,16 @@ hiddenimports += collect_submodules('PyQt6')
 tmp_ret = collect_all('playwright')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
+# 显式添加 Playwright Chromium 浏览器二进制（PLAYWRIGHT_BROWSERS_PATH=0 下载到包目录）
+# 确保 .local-browsers 目录被 PyInstaller 打包（collect_all 可能遗漏隐藏目录）
+try:
+    import playwright as _pw
+    _pw_browsers = os.path.join(os.path.dirname(_pw.__file__), 'driver', 'package', '.local-browsers')
+    if os.path.isdir(_pw_browsers):
+        datas += [(_pw_browsers, os.path.join('playwright', 'driver', 'package', '.local-browsers'))]
+except ImportError:
+    pass
+
 exclude_list = ['PyQt6.Qt6', 'tkinter', 'matplotlib', 'numpy', 'pandas', 'PyQt5', 'PySide6', 'PyQt6.Qt3DCore', 'PyQt6.Qt3DRender', 'PyQt6.Qt3DAnimation', 'PyQt6.Qt3DExtras', 'PyQt6.Qt3DInput', 'PyQt6.Qt3DLogic', 'PyQt6.QtBluetooth', 'PyQt6.QtCharts', 'PyQt6.QtDataVisualization', 'PyQt6.QtDesigner', 'PyQt6.QtHelp', 'PyQt6.QtMultimedia', 'PyQt6.QtMultimediaWidgets', 'PyQt6.QtNetwork', 'PyQt6.QtNfc', 'PyQt6.QtOpenGL', 'PyQt6.QtOpenGLWidgets', 'PyQt6.QtPdf', 'PyQt6.QtPdfWidgets', 'PyQt6.QtPositioning', 'PyQt6.QtPrintSupport', 'PyQt6.QtQml', 'PyQt6.QtQuick', 'PyQt6.QtQuick3D', 'PyQt6.QtQuickControls2', 'PyQt6.QtQuickWidgets', 'PyQt6.QtRemoteObjects', 'PyQt6.QtSensors', 'PyQt6.QtSerialPort', 'PyQt6.QtSpatialAudio', 'PyQt6.QtSql', 'PyQt6.QtTest', 'PyQt6.QtTextToSpeech', 'PyQt6.QtWebChannel', 'PyQt6.QtWebEngineCore', 'PyQt6.QtWebEngineQuick', 'PyQt6.QtWebEngineWidgets', 'PyQt6.QtWebSockets', 'PyQt6.QtXml']
 if IS_MACOS:
     exclude_list.append('PIL')
