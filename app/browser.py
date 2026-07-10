@@ -191,48 +191,147 @@ class ChromeManager:
                      "http_proxy", "https_proxy", "all_proxy"):
             os.environ.pop(var, None)
 
-        # 查找系统已下载的 Playwright Chromium 二进制路径
-        # Playwright 1.61+ 路径: chromium-XXXX/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing
-        # Playwright 1.40  路径: chromium-XXXX/chrome-mac/Chromium.app/Contents/MacOS/Chromium
+        # 查找 Playwright Chromium 二进制路径
+        # 搜索顺序：PyInstaller 打包目录 → 可执行文件同目录 → 系统缓存目录
         def _find_bundled_chromium() -> Optional[str]:
-            """在用户缓存目录中查找 Playwright 下载的 Chromium 可执行文件。"""
+            """在打包目录和系统缓存中查找 Playwright Chromium 可执行文件。"""
             from pathlib import Path
 
-            if sys.platform == 'darwin':
-                cache_dirs = [os.path.expanduser("~/Library/Caches/ms-playwright")]
-                # 新版(1.61+)和旧版(1.40)两种路径
-                subpaths = [
-                    "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
-                    "chrome-mac/Chromium.app/Contents/MacOS/Chromium",
-                ]
-            elif sys.platform == 'win32':
-                cache_dirs = [os.path.join(os.environ.get("LOCALAPPDATA", ""), "ms-playwright")]
-                subpaths = ["chrome-win64/chrome.exe", "chrome-win\\chrome.exe"]
-            else:
-                cache_dirs = [os.path.expanduser("~/.cache/ms-playwright")]
-                subpaths = ["chrome-linux/chrome"]
-
-            for cache_dir in cache_dirs:
-                if not os.path.isdir(cache_dir):
-                    continue
-                candidates = list(Path(cache_dir).glob("chromium-*"))
+            def _search_in_dir(base, subpaths):
+                """在 base/chromium-*/ 下按版本从高到低搜索 Chromium。"""
+                base = Path(base)
+                if not base.is_dir():
+                    return None
+                candidates = list(base.glob("chromium-*"))
                 if not candidates:
-                    continue
+                    return None
                 def _ver(p):
                     try:
                         return int(p.name.split("-")[-1])
                     except (ValueError, IndexError):
                         return 0
-                # 从高版本到低版本尝试
                 for c in sorted(candidates, key=_ver, reverse=True):
                     for sub in subpaths:
                         exe = c / sub
                         if exe.exists():
                             log_info(f"找到 Playwright Chromium: {exe}")
                             return str(exe)
+                return None
+
+            # 确定各平台子路径
+            if sys.platform == 'darwin':
+                subpaths = [
+                    "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+                    "chrome-mac/Chromium.app/Contents/MacOS/Chromium",
+                ]
+                system_caches = [
+                    os.path.expanduser("~/Library/Caches/ms-playwright"),
+                    os.path.join(os.path.expanduser("~/Library/Caches/PolySage"), "browsers"),
+                ]
+            elif sys.platform == 'win32':
+                subpaths = ["chrome-win64/chrome.exe"]
+                _la = os.environ.get("LOCALAPPDATA", "")
+                system_caches = [
+                    os.path.join(_la, "ms-playwright"),
+                    os.path.join(_la, "PolySage", "browsers"),
+                ]
+            else:
+                subpaths = ["chrome-linux/chrome"]
+                system_caches = [
+                    os.path.expanduser("~/.cache/ms-playwright"),
+                    os.path.join(os.path.expanduser("~/.cache/PolySage"), "browsers"),
+                ]
+
+            # 1. PyInstaller 打包环境：查找 _MEIPASS 内的 Chromium
+            if hasattr(sys, '_MEIPASS') and sys._MEIPASS:
+                meipass = Path(sys._MEIPASS)
+                for bd in [
+                    meipass / 'playwright' / 'driver' / 'package' / '.local-browsers',
+                    meipass / '.local-browsers',
+                ]:
+                    result = _search_in_dir(bd, subpaths)
+                    if result:
+                        return result
+
+            # 2. 可执行文件同目录（onedir 模式）
+            exe_dir = Path(sys.executable).parent
+            for rel in [
+                '_internal/playwright/driver/package/.local-browsers',
+                'playwright/driver/package/.local-browsers',
+                'Frameworks/playwright/driver/package/.local-browsers',
+            ]:
+                result = _search_in_dir(exe_dir / rel, subpaths)
+                if result:
+                    return result
+
+            # 3. 系统缓存目录（开发环境或用户手动安装）
+            for cache_dir in system_caches:
+                result = _search_in_dir(cache_dir, subpaths)
+                if result:
+                    return result
+
             return None
 
+        def _try_download_chromium() -> Optional[str]:
+            """未找到 Chromium 时，尝试通过 Playwright driver 自动下载到用户可写目录。"""
+            import subprocess
+
+            # 确定用户可写的下载目录
+            if sys.platform == 'win32':
+                dl_dir = os.path.join(os.environ.get("LOCALAPPDATA", ""), "PolySage", "browsers")
+            elif sys.platform == 'darwin':
+                dl_dir = os.path.expanduser("~/Library/Caches/PolySage/browsers")
+            else:
+                dl_dir = os.path.expanduser("~/.cache/PolySage/browsers")
+            os.makedirs(dl_dir, exist_ok=True)
+
+            # 查找 Playwright driver（node + cli.js）
+            if hasattr(sys, '_MEIPASS') and sys._MEIPASS:
+                base = sys._MEIPASS
+            else:
+                import playwright as _pw
+                base = os.path.dirname(_pw.__file__)
+            node_name = "node.exe" if sys.platform == 'win32' else "node"
+            node_exe = os.path.join(base, "playwright", "driver", "package", node_name)
+            if not os.path.isfile(node_exe):
+                node_exe = os.path.join(base, "driver", "package", node_name)
+            cli_js = os.path.join(os.path.dirname(node_exe), "cli.js")
+
+            if not os.path.isfile(node_exe) or not os.path.isfile(cli_js):
+                log_warning(f"Playwright driver 未找到: node={node_exe}, cli={cli_js}")
+                return None
+
+            try:
+                log_info(f"正在下载 Chromium 到 {dl_dir}...")
+                env = os.environ.copy()
+                env["PLAYWRIGHT_BROWSERS_PATH"] = dl_dir
+                result = subprocess.run(
+                    [node_exe, cli_js, "install", "chromium"],
+                    capture_output=True, text=True, timeout=180, env=env
+                )
+                if result.returncode == 0:
+                    log_info("Chromium 下载完成，重新搜索...")
+                    return _find_bundled_chromium()
+                else:
+                    log_warning(f"Chromium 下载失败: {result.stderr[:300]}")
+                    return None
+            except Exception as e:
+                log_warning(f"下载 Chromium 异常: {e}")
+                return None
+
         chromium_exe = _find_bundled_chromium()
+
+        # 未找到 Chromium 时尝试自动下载（回退机制）
+        if not chromium_exe:
+            chromium_exe = _try_download_chromium()
+
+        # 设置 Playwright 浏览器搜索路径（打包环境：使用包内浏览器）
+        if hasattr(sys, '_MEIPASS') and sys._MEIPASS:
+            bundle_browsers = os.path.join(
+                sys._MEIPASS, 'playwright', 'driver', 'package', '.local-browsers'
+            )
+            if os.path.isdir(bundle_browsers):
+                os.environ['PLAYWRIGHT_BROWSERS_PATH'] = '0'
 
         try:
             if self._playwright is None:
