@@ -121,7 +121,7 @@ python3 -m PyInstaller \
     --collect-submodules PyQt6 \
     --collect-binaries PyQt6 \
     --collect-all playwright \
-    $([ -n "$PW_BROWSERS" ] && echo "--add-data \"${PW_BROWSERS}:playwright/driver/package/.local-browsers\"") \
+    $([ -n "$PW_BROWSERS" ] && echo "--add-data=${PW_BROWSERS}:playwright/driver/package/.local-browsers") \
     --collect-data qasync \
     --copy-metadata openai \
     --copy-metadata qasync \
