@@ -46,11 +46,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r app/requirements.txt pyinstaller==6.3.0
 
-      - name: 安装 Playwright Chromium（下载到包目录，供 PyInstaller 打包）
-        run: playwright install chromium
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: "0"
-
+      # macOS: Chromium 由 build_dmg.sh 下载到临时目录，PyInstaller 后再复制（避免 Mach-O 处理失败）
       - name: 构建 macOS .app + .dmg（build_dmg.sh）
         working-directory: app
         env:
