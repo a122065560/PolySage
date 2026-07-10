@@ -350,7 +350,7 @@ class WorkerThread(QThread):
     async def _start_chrome_async(self, active_ais: list):
         """启动 Chrome，然后为中军帐每个AI创建 AIWorker。"""
         self.button_state.emit(False, False)
-        self.status_msg.emit("正在启动 Chrome...", 0)
+        self.status_msg.emit("正在启动浏览器...", 0)
         self._chrome_mgr.clear_thinking_cache()
 
         try:

@@ -29,14 +29,14 @@ DEFAULT_CONFIG = {
     "chrome": {
         "debug_port": 9222,
         "user_data_dir": str(CONFIG_DIR / "chrome-data"),
+        "browser_mode": "built-in",  # "built-in"=内置浏览器, "system"=谷歌浏览器
     },
     "discussion": {
         "end_signal": "<End>",
         "start_signal": "<ok>",
         "arbitration_signal": "<结案>",
-        "max_rounds": 100,
-        "timeout_seconds": 600,
-        "arbitrator": "DeepSeek",
+        "max_rounds": 20,
+        "timeout_seconds": 300,
         "default_active_ais": ["DeepSeek", "智谱清言"],
         "opening_remarks": "你正在参与一场多AI群聊协作。\n发起话题的是主公，你需遵从主公的旨意。\n请等待主公提出复杂议题（如项目架构、创作大纲等），\n需要你与其他AI展开深度推演：质疑细节、补充边界、提供替代方案。\n请分轮次讨论，不急于给出最终结论。当多方确认讨论充分后，再整合为结构化方案。",
     },
@@ -51,12 +51,20 @@ DEFAULT_CONFIG = {
             "name": "DeepSeek",
             "url": "https://chat.deepseek.com/",
             "enabled": True,
+            "is_arbitrator": True,
             "selectors": {
                 "input_textarea": "textarea",
                 "send_button": "div[class*='input'] div[role='button']:last-child",
-                "send_button_selectors": ["div.enter.is-main-chat", "div.enter-icon-container:not(.empty)", "div[class*=\"enter-icon-container\"]:not(.empty)", "img.enter_icon", "div[class*=\"send\"]", "button[class*=\"send\"]"],
-                "send_button_selectors": ["div[class*='input'] div[role='button']:last-child", "div[class*=\"send\"]", "button[class*=\"send\"]"],
-                "send_button_selectors": ["div[class*='input'] div[role='button']:last-child", "div[class*='send']", "button[class*='send']"],
+                "send_button_selectors": [
+                    "div.enter.is-main-chat",
+                    "div.enter-icon-container:not(.empty)",
+                    "div[class*='enter-icon-container']:not(.empty)",
+                    "img.enter_icon",
+                    "div[class*='input'] div[role='button']:last-child",
+                    "div[class*='send']",
+                    "button[class*='send']",
+                    "button[aria-label*='发送']",
+                ],
                 "stop_button": "div[class*='answer'] div[class*='stop']",
                 "response_container": "div.message-content",
                 "last_response": "div.message-content:not([class*='think']):last-of-type",
@@ -73,9 +81,17 @@ DEFAULT_CONFIG = {
             "name": "智谱清言",
             "url": "https://chatglm.cn/",
             "enabled": True,
+            "is_arbitrator": False,
             "selectors": {
                 "input_textarea": "textarea",
-                "send_button": "div[class*='send'], div[class*='chat-input-send']",
+                "send_button": "div[class*='send'], div[class*='chat-input-send'], button[aria-label*='发送'], div.enter-icon-container",
+                "send_button_selectors": [
+                    "div.enter-icon-container:not(.empty)",
+                    "div.enter.is-main-chat",
+                    "button[aria-label*='发送']",
+                    "div[aria-label*='发送']",
+                    "div.chat-input-footer div[class*='icon']:not([class*='stop'])",
+                ],
                 "stop_button": "div[class*='stop'], button:has-text('停止')",
                 "response_container": "div[class*='message']",
                 "last_response": "div[class*='markdown']:not([class*='think']):last-of-type",
@@ -104,6 +120,7 @@ DEFAULT_CONFIG = {
             "name": "通义千问",
             "url": "https://www.qianwen.com/",
             "enabled": True,
+            "is_arbitrator": False,
             "selectors": {
                 "input_textarea": "div[contenteditable='true'][role='textbox'], textarea",
                 "send_button": "button[aria-label='发送'], button:has-text('发送')",
@@ -134,6 +151,7 @@ DEFAULT_CONFIG = {
             "name": "MiniMax",
             "url": "https://agent.minimaxi.com/",
             "enabled": True,
+            "is_arbitrator": False,
             "selectors": {
                 "input_textarea": "div[data-testid='message-textarea'], div[contenteditable='true'].tiptap, textarea, div[contenteditable='true']",
                 "send_button": "div[data-testid='send-button'], button[data-testid='send-button'], div[class*='send'], button[class*='send']",
@@ -164,6 +182,7 @@ DEFAULT_CONFIG = {
             "name": "Kimi",
             "url": "https://www.kimi.com/",
             "enabled": True,
+            "is_arbitrator": False,
             "selectors": {
                 "input_textarea": "div.chat-input-editor[contenteditable='true'], div[contenteditable='true'][role='textbox'], textarea",
                 "send_button": "div.send-button-container, div[class*='send-button']",
@@ -505,13 +524,13 @@ class ConfigManager:
         if disc.get("opening_remarks", "").startswith(old_opening):
             disc["opening_remarks"] = DEFAULT_CONFIG["discussion"]["opening_remarks"]
             changed = True
-        # 超时时间：如果还是旧的120秒，更新为600秒
-        if disc.get("timeout_seconds") == 120:
-            disc["timeout_seconds"] = 600
+        # 超时时间：如果还是旧的120秒或600秒，更新为300秒
+        if disc.get("timeout_seconds") in (120, 600):
+            disc["timeout_seconds"] = 300
             changed = True
-        # 结案方：如果是旧的 auto，更新为 DeepSeek
-        if disc.get("arbitrator") == "auto":
-            disc["arbitrator"] = "DeepSeek"
+        # 讨论轮数：如果还是旧的50轮，恢复为默认20轮
+        if disc.get("max_rounds") == 50:
+            disc["max_rounds"] = 20
             changed = True
         # 结案标识：如果未配置或还是旧的<拍板>，设为默认 <结案>
         if not disc.get("arbitration_signal") or disc.get("arbitration_signal") == "<拍板>":
@@ -520,14 +539,6 @@ class ConfigManager:
         # 最少讨论轮数：从旧的10降为3
         if disc.get("min_rounds_before_arbitration", 3) == 10:
             disc["min_rounds_before_arbitration"] = 3
-            changed = True
-        # 默认军师从智谱清言改为DeepSeek
-        if disc.get("arbitrator") == "智谱清言":
-            disc["arbitrator"] = "DeepSeek"
-            changed = True
-        # 最大轮数：如果还是旧的20，更新为100
-        if disc.get("max_rounds") == 20:
-            disc["max_rounds"] = 100
             changed = True
         if changed:
             self.config["discussion"] = disc

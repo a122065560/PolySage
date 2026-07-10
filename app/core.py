@@ -53,9 +53,18 @@ class HostedMode:
         self.end_signal = self.discussion.get("end_signal", "<已得出最终结果>")
         self.start_signal = self.discussion.get("start_signal", "<ok>")
         self.arbitration_signal = self.discussion.get("arbitration_signal", "<结案>")
-        self.max_rounds = self.discussion.get("max_rounds", 100)
-        self.timeout = self.discussion.get("timeout_seconds", 120)
-        self.arbitrator = self.discussion.get("arbitrator", "auto")
+        self.max_rounds = self.discussion.get("max_rounds", 20)
+        self.timeout = self.discussion.get("timeout_seconds", 300)
+        self.arbitrator = self.discussion.get("arbitrator", "")
+        if not self.arbitrator:
+            # 从AI平台列表中读取 is_arbitrator 标记
+            platforms = config.get("ai_platforms", [])
+            for p in platforms:
+                if p.get("is_arbitrator", False):
+                    self.arbitrator = p["name"]
+                    break
+            if not self.arbitrator and platforms:
+                self.arbitrator = platforms[0]["name"]
         self.opening_remarks = self.discussion.get("opening_remarks", "")
         # 最少讨论轮数：在此之前不允许军师结案（防止开场白阶段误触发）
         self.min_rounds_before_arbitration = self.discussion.get("min_rounds_before_arbitration", 3)
@@ -496,7 +505,7 @@ class HostedMode:
         #   - 全失败时重试（最多3次），不立即结束
         #   - 军师可随时结案结束（但需达到最少轮数）
 
-        soft_timeout = 180  # 软超时秒数（AI生成长回复需要时间）
+        soft_timeout = max(self.timeout, 120)  # 软超时 = 单AI超时（用户可设置），至少120s
         prev_round_replies = []  # 上一轮所有AI的回复
         consecutive_failures = 0  # 连续失败轮数
         ai_fail_count = {}  # 各AI连续失败计数 {name: count}
@@ -881,7 +890,7 @@ class HostedMode:
         # 追问模式也使用军师主导架构
         # ==========================================================
         import datetime
-        soft_timeout = 180
+        soft_timeout = max(self.timeout, 120)
         prev_round_replies = []
         consecutive_failures = 0
         ai_fail_count = {}  # 各AI连续失败计数

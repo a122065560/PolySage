@@ -448,7 +448,7 @@ def delete_all_logs() -> tuple[int, str]:
             logger.removeHandler(h)
     _component_loggers = {}
 
-    return (count, f"已清空全部 {count} 个日志文件，下次运行时自动重建。")
+    return (count, f"已清空全部 {count} 个日志文件，下次写入时自动创建。")
 
 
 # ==================== 兼容旧接口 ====================

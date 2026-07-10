@@ -150,14 +150,149 @@ class ChromeManager:
 
     async def start_chrome_debug_async(self) -> tuple:
         """
-        启动 Chrome 调试模式（跨平台）。
+        启动浏览器调试模式（跨平台）。
 
-        macOS: 通过 LaunchAgent 让 launchd 启动 Chrome（避免 TCC 权限提示）
-        Windows/Linux: 直接 subprocess.Popen 启动
+        根据配置 browser_mode 选择：
+        - "built-in": 使用 Playwright 内置 Chromium（无需用户安装 Chrome）
+        - "system":   使用系统已安装的 Google Chrome
 
         Returns:
             tuple: (success: bool, message: str)
         """
+        chrome_cfg = self.config.get("chrome", {})
+        browser_mode = chrome_cfg.get("browser_mode", "built-in")
+
+        if browser_mode == "built-in":
+            return await self._start_built_in_browser()
+        else:
+            return await self._start_system_chrome()
+
+    async def _start_built_in_browser(self) -> tuple:
+        """启动 Playwright 内置 Chromium（不依赖系统 Chrome）。"""
+        import subprocess
+
+        chrome_cfg = self.config.get("chrome", {})
+        port = chrome_cfg.get("debug_port", 9222)
+        user_data_dir = chrome_cfg.get("user_data_dir", "")
+        if user_data_dir:
+            user_data_dir = os.path.expanduser(user_data_dir)
+        else:
+            user_data_dir = os.path.expanduser("~/.polysage/chrome-data")
+
+        # 端口已占用时，浏览器可能已在运行
+        if is_port_in_use(port):
+            log_info(f"浏览器调试端口 {port} 已占用（可能已在运行）")
+            return True, f"浏览器端口 {port} 已就绪（可能已在运行）。"
+
+        os.makedirs(user_data_dir, exist_ok=True)
+
+        # 清除代理环境变量
+        for var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+                     "http_proxy", "https_proxy", "all_proxy"):
+            os.environ.pop(var, None)
+
+        # 查找系统已下载的 Playwright Chromium 二进制路径
+        # Playwright 1.61+ 路径: chromium-XXXX/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing
+        # Playwright 1.40  路径: chromium-XXXX/chrome-mac/Chromium.app/Contents/MacOS/Chromium
+        def _find_bundled_chromium() -> Optional[str]:
+            """在用户缓存目录中查找 Playwright 下载的 Chromium 可执行文件。"""
+            from pathlib import Path
+
+            if sys.platform == 'darwin':
+                cache_dirs = [os.path.expanduser("~/Library/Caches/ms-playwright")]
+                # 新版(1.61+)和旧版(1.40)两种路径
+                subpaths = [
+                    "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+                    "chrome-mac/Chromium.app/Contents/MacOS/Chromium",
+                ]
+            elif sys.platform == 'win32':
+                cache_dirs = [os.path.join(os.environ.get("LOCALAPPDATA", ""), "ms-playwright")]
+                subpaths = ["chrome-win64/chrome.exe", "chrome-win\\chrome.exe"]
+            else:
+                cache_dirs = [os.path.expanduser("~/.cache/ms-playwright")]
+                subpaths = ["chrome-linux/chrome"]
+
+            for cache_dir in cache_dirs:
+                if not os.path.isdir(cache_dir):
+                    continue
+                candidates = list(Path(cache_dir).glob("chromium-*"))
+                if not candidates:
+                    continue
+                def _ver(p):
+                    try:
+                        return int(p.name.split("-")[-1])
+                    except (ValueError, IndexError):
+                        return 0
+                # 从高版本到低版本尝试
+                for c in sorted(candidates, key=_ver, reverse=True):
+                    for sub in subpaths:
+                        exe = c / sub
+                        if exe.exists():
+                            log_info(f"找到 Playwright Chromium: {exe}")
+                            return str(exe)
+            return None
+
+        chromium_exe = _find_bundled_chromium()
+
+        try:
+            if self._playwright is None:
+                self._playwright = await async_playwright().start()
+
+            log_info(f"启动内置 Chromium: 端口 {port}, 数据目录 {user_data_dir}, exe={chromium_exe or '默认'}")
+
+            launch_kwargs = dict(
+                user_data_dir=user_data_dir,
+                headless=False,
+                args=[
+                    f"--remote-debugging-port={port}",
+                    "--remote-allow-origins=*",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--no-proxy-server",
+                    "--disable-blink-features=AutomationControlled",
+                ],
+                no_viewport=True,
+            )
+            if chromium_exe:
+                launch_kwargs["executable_path"] = chromium_exe
+
+            self._context = await asyncio.wait_for(
+                self._playwright.chromium.launch_persistent_context(
+                    **launch_kwargs
+                ),
+                timeout=15
+            )
+
+            # 拿到 browser 引用
+            self._browser = self._context.browser
+            log_info(f"内置 Chromium 已启动（端口 {port}）")
+            return True, f"内置浏览器已启动（端口 {port}）。"
+
+        except asyncio.TimeoutError:
+            log_error("内置 Chromium 启动超时（15秒）")
+            self._context = None
+            self._browser = None
+            if self._playwright:
+                try:
+                    await self._playwright.stop()
+                except Exception:
+                    pass
+                self._playwright = None
+            return False, "内置浏览器启动超时，请重试或检查网络代理设置"
+        except Exception as e:
+            log_exception("内置 Chromium 启动异常", type(e), e, e.__traceback__)
+            self._context = None
+            self._browser = None
+            if self._playwright:
+                try:
+                    await self._playwright.stop()
+                except Exception:
+                    pass
+                self._playwright = None
+            return False, f"内置浏览器启动失败: {e}"
+
+    async def _start_system_chrome(self) -> tuple:
+        """启动系统 Google Chrome 调试模式。"""
         import subprocess
 
         chrome_cfg = self.config.get("chrome", {})
@@ -326,17 +461,65 @@ class ChromeManager:
 
     def stop_chrome(self):
         """
-        停止 Chrome 调试进程（跨平台）。
+        停止浏览器调试进程（跨平台）。
 
-        macOS: launchctl unload + pkill 后备
-        Windows: taskkill 终止进程树
-        Linux: pkill
+        内置浏览器模式：关闭 Playwright persistent context + browser
+        系统Chrome模式：launchctl unload / taskkill / pkill
         """
         import subprocess
         import time
 
         port = self.config.get("chrome", {}).get("debug_port", 9222)
+        browser_mode = self.config.get("chrome", {}).get("browser_mode", "built-in")
 
+        # 内置浏览器模式：优先通过 Playwright API 关闭
+        if browser_mode == "built-in" and self._context is not None:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    task = asyncio.ensure_future(self._context.close())
+                    def _suppress(t):
+                        try:
+                            t.result()
+                        except Exception:
+                            pass
+                    task.add_done_callback(_suppress)
+                else:
+                    # 事件循环已停止，尝试同步关闭
+                    try:
+                        loop.run_until_complete(self._context.close())
+                    except Exception:
+                        pass
+                log_info("内置浏览器 context 已关闭")
+            except Exception as e:
+                log_warning(f"关闭内置浏览器 context 失败: {e}")
+
+        # 清理 Playwright 资源
+        self._context = None
+        self._browser = None
+        if self._playwright:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    task = asyncio.ensure_future(self._playwright.stop())
+                    def _suppress(t):
+                        try:
+                            t.result()
+                        except Exception:
+                            pass
+                    task.add_done_callback(_suppress)
+                else:
+                    pass
+            except Exception:
+                pass
+            self._playwright = None
+
+        # 内置浏览器模式：Playwright API 关闭后，端口通常已释放
+        if not is_port_in_use(port):
+            log_info(f"浏览器端口 {port} 已释放")
+            return
+
+        # 系统Chrome模式 或 内置浏览器未正常关闭时的后备清理
         if sys.platform == 'darwin':
             # macOS: 通过 launchctl unload 让 launchd 终止 Chrome
             if os.path.exists(self._LAUNCH_AGENT_PLIST):
@@ -389,30 +572,6 @@ class ChromeManager:
                 time.sleep(1)
             except Exception as e:
                 log_warning(f"pkill 关闭 Chrome 失败: {e}")
-
-        # 清理 Playwright 资源
-        # 注意：退出时事件循环可能已停止，不要尝试 run_until_complete
-        self._context = None
-        self._browser = None
-        if self._playwright:
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # 事件循环仍在运行，安全地调度异步清理
-                    task = asyncio.ensure_future(self._playwright.stop())
-                    # 添加异常回调，避免 "Task exception was never retrieved"
-                    def _suppress_exc(t):
-                        try:
-                            t.result()
-                        except Exception:
-                            pass
-                    task.add_done_callback(_suppress_exc)
-                else:
-                    # 事件循环已停止，直接置空，让进程退出时自动清理
-                    pass
-            except Exception:
-                pass
-            self._playwright = None
 
     # ------------------------------------------------------------------
     # Playwright 连接
@@ -706,7 +865,7 @@ class ChromeManager:
             return False
 
     async def send_and_wait(self, page: Page, message: str,
-                            ai_config: dict, timeout: int = 120,
+                            ai_config: dict, timeout: int = 300,
                             fast_wait: bool = False) -> str:
         """
         发送消息并等待 AI 回复完成，提取最新回复纯文本。
@@ -856,10 +1015,12 @@ class ChromeManager:
                         # 回退到 fill
                         await input_el.fill(message)
                         await page.wait_for_timeout(200)
+                    # 等待 React 同步：填充后休息一段时间，让前端框架有时间处理状态
+                    await page.wait_for_timeout(600)
                     # 验证Vue/React是否同步了状态：检查发送按钮是否不再是"empty"状态
                     state_ok = await page.evaluate("""() => {
-                        const btn = document.querySelector('.enter-icon-container, div[class*="send"]');
-                        if (btn && btn.className.includes('empty')) {
+                        const btn = document.querySelector('.enter-icon-container, div[class*="send"], button[aria-label*="发送"], [data-testid="send-button"]');
+                        if (btn && btn.className && btn.className.includes('empty')) {
                             return false;  // 按钮仍为empty状态，框架未同步
                         }
                         const ta = document.querySelector('textarea');
@@ -1360,69 +1521,113 @@ class ChromeManager:
         """
         发送消息 — 严格单次发送，绝不重复点击。
 
-        核心原则：
-        1. 只尝试一种发送方式，发送后立即验证
-        2. 如果发送成功（输入框清空/内容增长），直接返回 True
-        3. 如果发送失败，返回 False，由调用方决定是否重试
-        4. 绝不连续点击多个按钮 — 第一次发送后按钮可能变成"停止"按钮
+        流程（由简到繁，每种方式只试一次）：
+        1. 等待 React 同步（填充后等 800ms 让前端框架处理状态）
+        2. 重新定位 textarea（React 可能重新渲染了旧引用）
+        3. 方式1: JS focus + Playwright keyboard Enter（最可靠，不依赖 DOM 结构）
+        4. 方式2: JS click 所有可能的发送按钮（综合所有平台的所有已知选择器）
+        5. 方式3: form.submit（兜底，找最近的 form 提交）
         """
-        before_text = ""
+        # === 等待 React 同步 ===
+        await page.wait_for_timeout(800)
+
+        # === 重新定位 textarea ===
+        fresh_textarea = None
         try:
-            before_text = await input_el.input_value()
+            ta = await page.query_selector("textarea")
+            if ta:
+                fresh_textarea = ta
         except Exception:
+            pass
+        if not fresh_textarea:
             try:
-                before_text = await input_el.inner_text()
+                ce = await page.query_selector('[contenteditable="true"]')
+                if ce:
+                    fresh_textarea = ce
             except Exception:
-                before_text = message
+                pass
+        if fresh_textarea:
+            input_el = fresh_textarea
 
-        # 确保输入框有焦点
+        before_text = message
         try:
-            await input_el.focus()
+            val = await input_el.input_value()
+            before_text = val
         except Exception:
-            fresh = await page.query_selector("textarea") or \
-                    await page.query_selector('[contenteditable="true"]') or \
-                    await page.query_selector('[role="textbox"]')
-            if fresh:
-                input_el = fresh
-                await input_el.focus()
-        await page.wait_for_timeout(200)
+            pass
 
-        # --- 方式1: Playwright Enter ---
+        # === 确保焦点在 textarea 上（通过 JS 强制设置） ===
+        try:
+            await page.evaluate("""() => {
+                const el = document.querySelector('textarea') ||
+                           document.querySelector('[contenteditable="true"]') ||
+                           document.querySelector('[role="textbox"]');
+                if (el) { el.focus(); el.click(); }
+            }""")
+            await page.wait_for_timeout(300)
+        except Exception:
+            pass
+
+        # ============================================================
+        # 方式1: JS focus + Playwright keyboard Enter
+        #   Playwright 的 keyboard.press 发送操作系统级 key 事件，
+        #   在所有 React/Vue 页面上都是最可靠的发送方式。
+        # ============================================================
         log_info(f"[{ai_name}] 尝试方式1: Playwright Enter 发送")
         try:
             await page.keyboard.press("Enter")
-            await page.wait_for_timeout(1500)
+            await page.wait_for_timeout(2000)
             if await self._verify_sent(page, input_el, before_text, ai_name, "Playwright Enter"):
                 return True
             try:
                 remaining = await input_el.input_value()
             except Exception:
                 remaining = ""
-            if not remaining or len(remaining) < 3:
-                log_info(f"[{ai_name}] 输入框已清空，消息已发送")
+            if not remaining or len(str(remaining).strip()) < 3:
+                log_info(f"[{ai_name}] 方式1成功: 输入框已清空")
                 return True
-            log_info(f"[{ai_name}] 方式1未成功，输入框仍有 {len(remaining)} 字")
+            log_info(f"[{ai_name}] 方式1未成功(输入框仍有 {len(str(remaining))} 字)")
         except Exception as e:
             log_warning(f"[{ai_name}] 方式1失败: {e}")
 
-        # --- 方式2: 点击发送按钮（只点击一次） ---
-        log_info(f"[{ai_name}] 尝试方式2: 点击发送按钮")
-        # 构建发送按钮选择器列表：配置优先级 > config_selector > 通用兜底
+        # ============================================================
+        # 方式2: JS 点击发送按钮
+        #   综合所有已知平台的发送按钮选择器，暴力尝试。
+        # ============================================================
+        log_info(f"[{ai_name}] 尝试方式2: JS 点击发送按钮")
         send_selectors = []
+        # 平台专用选择器
         if platform_selectors:
             send_selectors.extend(platform_selectors)
         if config_selector and config_selector not in send_selectors:
             send_selectors.append(config_selector)
-        # 通用兜底选择器（不用平台独占的，避免误触）
-        generic_fallbacks = [
+        # 综合所有已知平台的发送按钮选择器（硬编码兜底，避免配置遗漏）
+        ALL_SEND_SELECTORS = [
+            # DeepSeek 格式
+            'div[class*="input"] div[role="button"]:last-child',
+            'div[class*="input"] button:last-child',
+            'div.enter.is-main-chat',
+            'div.enter-icon-container:not(.empty)',
+            'div[class*="enter-icon-container"]:not(.empty)',
+            'img.enter_icon',
+            # 智谱格式
             'div[class*="send"]',
             'button[class*="send"]',
+            'div[class*="chat-input-send"]',
             'div[class*="submit"]',
+            'button[aria-label*="发送"]',
+            'div[aria-label*="发送"]',
+            'div.chat-input-footer div[class*="icon"]:not([class*="stop"])',
+            # 通义格式
+            'button:has-text("发送")',
+            # MiniMax 格式
+            'div[data-testid="send-button"]',
+            'button[data-testid="send-button"]',
         ]
-        for sel in generic_fallbacks:
+        for sel in ALL_SEND_SELECTORS:
             if sel not in send_selectors:
                 send_selectors.append(sel)
-        clicked_btn = False
+
         for sel in send_selectors:
             if not sel:
                 continue
@@ -1430,7 +1635,6 @@ class ChromeManager:
                 btn = await page.query_selector(sel)
                 if btn and await btn.is_visible():
                     await btn.click()
-                    clicked_btn = True
                     log_info(f"[{ai_name}] 点击发送按钮: {sel}")
                     await page.wait_for_timeout(1500)
                     if await self._verify_sent(page, input_el, before_text, ai_name, f"点击({sel})"):
@@ -1439,34 +1643,45 @@ class ChromeManager:
                         remaining = await input_el.input_value()
                     except Exception:
                         remaining = ""
-                    if not remaining or len(remaining) < 3:
-                        log_info(f"[{ai_name}] 输入框已清空，消息已发送")
+                    if not remaining or len(str(remaining).strip()) < 3:
+                        log_info(f"[{ai_name}] 方式2成功: 点击后输入框已清空")
                         return True
-                    break  # 只点击一个按钮
+                    log_info(f"[{ai_name}] 按钮{sel}点击后未发送，尝试下一个")
+                    break  # 只点击一个可见按钮，防止误点停止按钮
             except Exception:
                 continue
 
-        # --- 方式3: JS 点击发送按钮（只点击一次） ---
-        if not clicked_btn:
-            log_info(f"[{ai_name}] 尝试方式3: JS 点击发送按钮")
-            try:
-                clicked = await page.evaluate("""() => {
-                    const zhipuBtn = document.querySelector(
-                        'div.enter.is-main-chat, div.enter-icon-container:not(.empty), div[class*="enter-icon-container"]:not(.empty)'
-                    );
-                    if (zhipuBtn) { zhipuBtn.click(); return true; }
-                    const sendBtn = document.querySelector(
-                        'div[class*="send"], button[class*="send"], div[class*="submit"]'
-                    );
-                    if (sendBtn) { sendBtn.click(); return true; }
-                    return false;
-                }""")
-                if clicked:
-                    await page.wait_for_timeout(1500)
-                    if await self._verify_sent(page, input_el, before_text, ai_name, "JS点击"):
-                        return True
-            except Exception as e:
-                log_warning(f"[{ai_name}] 方式3失败: {e}")
+        # ============================================================
+        # 方式3: 兜底 — form.submit / Meta+Enter / Shift+Enter
+        # ============================================================
+        log_info(f"[{ai_name}] 尝试方式3: 兜底提交")
+        try:
+            submitted = await page.evaluate("""() => {
+                const ta = document.querySelector('textarea') || document.querySelector('[contenteditable="true"]');
+                if (ta) {
+                    const form = ta.closest('form');
+                    if (form) { form.requestSubmit(); return true; }
+                }
+                // Ctrl/Meta + Enter
+                const active = document.activeElement;
+                if (active) {
+                    ['keydown', 'keypress'].forEach(type => {
+                        active.dispatchEvent(new KeyboardEvent(type, {
+                            key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+                            bubbles: true, cancelable: true,
+                            metaKey: true, ctrlKey: true
+                        }));
+                    });
+                    return true;
+                }
+                return false;
+            }""")
+            if submitted:
+                await page.wait_for_timeout(2000)
+                if await self._verify_sent(page, input_el, before_text, ai_name, "兜底"):
+                    return True
+        except Exception as e:
+            log_warning(f"[{ai_name}] 方式3失败: {e}")
 
         return False
 
@@ -1476,13 +1691,13 @@ class ChromeManager:
         验证消息是否成功发送。
 
         判断依据（按可靠性排序）：
-        1. input_el 已脱离 DOM → 发送后重新渲染输入框，说明已发送
-        2. 输入框已清空或内容变化 → 已发送
-        3. 页面内容增长（有新回复出现）→ 已发送
-        4. 搜索弹窗出现 → 误触搜索按钮，返回 False
+        1. 页面 body 内容显著增长 → 有新回复，肯定已发送
+        2. input_el 已脱离 DOM → 发送后重新渲染输入框
+        3. 输入框已清空或内容变化 → 已发送
+        4. 搜索弹窗出现 → 误触，返回 False
 
-        使用轮询检测（每500ms检查一次，最多检查6次=3秒），
-        解决React异步渲染导致延迟更新DOM的问题。
+        轮询检测：每500ms检查一次，最多6次（3秒），
+        解决React异步渲染导致DOM延迟更新的问题。
         """
         # 检查是否弹出了搜索对话框
         try:
@@ -1504,10 +1719,19 @@ class ChromeManager:
         except Exception:
             before_body_len = 0
 
-        # 轮询检测：每500ms检查一次，最多6次（3秒）
-        # 解决React异步渲染导致DOM延迟更新的问题
-        for check_idx in range(6):
+        # 轮询检测：每500ms检查一次，最多8次（4秒）
+        for check_idx in range(8):
             await page.wait_for_timeout(500)
+
+            # 判断0（高优先级）：页面 body 内容是否有显著增长（最可靠，不受 DOM 结构影响）
+            try:
+                after_body_len = await page.evaluate("() => document.body.innerText.length")
+            except Exception:
+                after_body_len = before_body_len
+
+            if after_body_len > before_body_len + 80:
+                log_info(f"[{ai_name}] 发送成功（{method}），页面内容增长 {before_body_len}→{after_body_len} [轮询第{check_idx+1}次]")
+                return True
 
             # 判断1：input_el 是否已脱离 DOM（发送后重新渲染输入框）
             input_detached = False
@@ -1520,24 +1744,21 @@ class ChromeManager:
                 log_info(f"[{ai_name}] 发送成功（{method}），输入框已重新渲染（DOM detach）[轮询第{check_idx+1}次]")
                 return True
 
-            # 判断2：输入框是否清空或内容变化
+            # 判断2：输入框是否已清空（用 JS 直接读取，避免 Playwright 元素引用过期）
             try:
-                after_text = await input_el.input_value()
+                after_text = await page.evaluate("""() => {
+                    const el = document.querySelector('textarea') ||
+                               document.querySelector('[contenteditable="true"]') ||
+                               document.querySelector('[role="textbox"]');
+                    if (!el) return '';
+                    if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') return el.value;
+                    return el.textContent || '';
+                }""")
             except Exception:
                 after_text = ""
 
-            if not after_text or after_text != before_text:
+            if not after_text or len(after_text.strip()) < 3 or after_text != before_text:
                 log_info(f"[{ai_name}] 发送成功（{method}），输入框已清空/变化 [轮询第{check_idx+1}次]")
-                return True
-
-            # 判断3：页面内容是否增长（有新回复出现）
-            try:
-                after_body_len = await page.evaluate("() => document.body.innerText.length")
-            except Exception:
-                after_body_len = before_body_len
-
-            if after_body_len > before_body_len + 50:
-                log_info(f"[{ai_name}] 发送成功（{method}），页面内容增长 {before_body_len}→{after_body_len} [轮询第{check_idx+1}次]")
                 return True
 
         log_warning(f"[{ai_name}] {method} 后无变化(输入框={len(after_text)}字, 页面={after_body_len})")
