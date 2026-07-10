@@ -41,20 +41,15 @@ jobs:
           cache: 'pip'
           cache-dependency-path: app/requirements.txt
 
-      - name: 缓存 Playwright 浏览器
-        uses: actions/cache@v4
-        with:
-          path: ~/Library/Caches/ms-playwright
-          key: macos-playwright-chromium-${{ hashFiles('app/requirements.txt') }}
-          restore-keys: macos-playwright-chromium-
-
       - name: 安装依赖
         run: |
           python -m pip install --upgrade pip
           pip install -r app/requirements.txt pyinstaller==6.3.0
 
-      - name: 安装 Playwright Chromium
+      - name: 安装 Playwright Chromium（下载到包目录，供 PyInstaller 打包）
         run: playwright install chromium
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: "0"
 
       - name: 构建 macOS .app + .dmg（build_dmg.sh）
         working-directory: app
@@ -88,20 +83,15 @@ jobs:
           cache: 'pip'
           cache-dependency-path: app/requirements.txt
 
-      - name: 缓存 Playwright 浏览器
-        uses: actions/cache@v4
-        with:
-          path: ~\AppData\Local\ms-playwright
-          key: windows-playwright-chromium-${{ hashFiles('app/requirements.txt') }}
-          restore-keys: windows-playwright-chromium-
-
       - name: 安装依赖
         run: |
           python -m pip install --upgrade pip
           pip install -r app/requirements.txt pyinstaller==6.3.0
 
-      - name: 安装 Playwright Chromium
+      - name: 安装 Playwright Chromium（下载到包目录，供 PyInstaller 打包）
         run: playwright install chromium
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: "0"
 
       - name: PyInstaller 打包
         working-directory: app
