@@ -376,21 +376,35 @@ def build_user_input_prompt(user_msg: str, my_name: str,
 
 
 def build_supplement_prompt(user_msg: str, arbitrator: str,
-                            end_signal: str = "<End>") -> str:
+                            end_signal: str = "<End>",
+                            system_notice: str = "") -> str:
     """
-    讨论期间用户补充条件，只发给军师，告知军师将此补充加入讨论。
+    讨论期间用户补充条件（主公密令），只发给军师。
+
+    统一格式：
+    【系统通知】（包含密令 + AI变动等）
+    军师行动指令
 
     Args:
-        user_msg: 用户补充的内容
+        user_msg: 用户补充的内容（密令）
         arbitrator: 军师名称
         end_signal: 结束标识
+        system_notice: 其他系统通知（如AI变动通知）
 
     Returns:
         str: 补充条件提示字符串
     """
-    return f"""主公补充内容,需要军师将此补充加入讨论:{user_msg}
-
-请{arbitrator}作为军师,将以上补充内容纳入当前讨论,并在后续讨论中引导其他谋士一并考虑。如果讨论已达成共识,请写出完整的结构化最终方案,并在最后一行单独加上 {end_signal}。"""
+    parts = []
+    sn_parts = []
+    sn_parts.append(f"  - 主公密令：{user_msg}")
+    if system_notice:
+        sn_parts.append(system_notice)
+    parts.append("【系统通知】\n" + "\n".join(sn_parts) + "\n")
+    parts.append(
+        f"\n请{arbitrator}作为军师，将以上密令纳入当前讨论，并在后续讨论中引导其他谋士一并考虑。"
+        f"如果讨论已达成共识，请写出完整的结构化最终方案，并在最后一行单独加上 {end_signal}。"
+    )
+    return "\n".join(parts)
 
 
 def build_summary_prompt(history: list) -> str:
@@ -557,19 +571,27 @@ def build_arbiter_first_prompt(
     all_ai_names: list,
     end_signal: str = "<End>",
     arbitration_signal: str = "<结案>",
+    system_notice: str = "",
 ) -> str:
-    """军师第一轮：看到话题，发表初始分析，为讨论定下方向。"""
+    """军师第一轮：看到话题，发表初始分析，为讨论定下方向。
+
+    统一格式：
+    【系统通知】（如有，包含AI变动等）
+    军师行动指令（含讨论话题）
+    """
     members_str = "".join(f"【{n}】" for n in all_ai_names if n != my_name)
-    return f"""【第1轮 - 军师发言】
-
-【讨论话题】
-{topic}
-
-【参与谋士】{members_str}
-
-请{my_name}（军师）发表初始观点和分析，为讨论定下方向。
-你的发言将被发送给所有谋士，他们会基于你的分析展开讨论。
-请给出你的核心观点和需要重点讨论的方向，不需要给出最终方案。"""
+    parts = []
+    if system_notice:
+        parts.append(system_notice)
+    parts.append(f"【第1轮 - 军师发言】\n")
+    parts.append(f"【讨论话题】\n{topic}\n")
+    parts.append(f"【参与谋士】{members_str}\n")
+    parts.append(
+        f"请{my_name}（军师）发表初始观点和分析，为讨论定下方向。\n"
+        f"你的发言将被发送给所有谋士，他们会基于你的分析展开讨论。\n"
+        f"请给出你的核心观点和需要重点讨论的方向，不需要给出最终方案。"
+    )
+    return "\n".join(parts)
 
 
 def build_arbiter_round_prompt(
@@ -580,16 +602,26 @@ def build_arbiter_round_prompt(
     round_num: int = 1,
     end_signal: str = "<End>",
     arbitration_signal: str = "<结案>",
+    system_notice: str = "",
 ) -> str:
-    """军师后续轮：看到上一轮所有谋士的回复，给出方向或结案。"""
+    """军师后续轮：收到上一轮所有谋士的回复，给出方向或结案。
+
+    统一格式：
+    【系统通知】（如有，包含AI变动等）
+    【讨论回复】（其他AI的回复）
+    军师行动指令
+    """
     replies_text = ""
     for r in prev_round_replies:
         ts = r.get("timestamp", "")
         r_num = r.get("round", round_num - 1)
-        replies_text += f"【{r['name']}】(第{r_num}轮 {ts}) 说：\n{r['content']}\n\n"
+        replies_text += f"  {r['name']}（第{r_num}轮 {ts}）：\n{r['content']}\n\n"
 
-    parts = [f"【第{round_num}轮 - 军师发言】\n"]
-    parts.append(f"【上一轮（第{round_num - 1}轮）讨论记录】\n{replies_text}")
+    parts = []
+    if system_notice:
+        parts.append(system_notice)
+    parts.append(f"【第{round_num}轮 - 军师发言】\n")
+    parts.append(f"【讨论回复】\n{replies_text}")
     if focal_points:
         parts.append(f"【分歧焦点】\n{focal_points}\n")
     parts.append(

@@ -573,6 +573,12 @@ class HostedMode:
                 if progress_callback:
                     progress_callback("user_message", "主公", combined_msg)
 
+                # 构建AI剔除通知（如果有AI被剔除，密令中也附带通知）
+                removal_notice_for_supplement = ""
+                if self._removed_this_round:
+                    removal_lines = [f"  - {name}：{reason}" for name, reason in self._removed_this_round.items()]
+                    removal_notice_for_supplement = "\n".join(removal_lines)
+
                 # 密令发给军师，军师将密令纳入下一轮上下文
                 arb_ai = None
                 if self.arbitrator and self.arbitrator != "auto":
@@ -583,7 +589,9 @@ class HostedMode:
                 if arb_ai:
                     prompt_user = (
                         self._init_prefix(arb_ai, initialized, ai_list)
-                        + build_supplement_prompt(combined_msg, arb_ai["name"], end_signal=self.end_signal)
+                        + build_supplement_prompt(combined_msg, arb_ai["name"],
+                                                  end_signal=self.end_signal,
+                                                  system_notice=removal_notice_for_supplement)
                     )
                     if progress_callback:
                         progress_callback("user_prompt", arb_ai["name"], prompt_user)
@@ -629,11 +637,11 @@ class HostedMode:
             # Step 1: 军师先发言
             focal_points = extract_focal_points(prev_round_replies) if prev_round_replies else ""
 
-            # 构建AI剔除通知（如果有AI在本轮或上一轮被剔除）
-            removal_notice = ""
+            # 构建统一系统通知（AI变动等），格式为【系统通知】块
+            system_notice = ""
             if self._removed_this_round:
                 removal_lines = [f"  - {name}：{reason}" for name, reason in self._removed_this_round.items()]
-                removal_notice = "\n【⚠️ AI变动通知】\n以下AI已被移出议事厅，不再参与讨论，请勿等待他们的回复：\n" + "\n".join(removal_lines) + "\n"
+                system_notice = "【系统通知】\n以下AI已被移出议事厅，不再参与讨论，无需等待他们的回复：\n" + "\n".join(removal_lines) + "\n"
                 # 通知后清除，避免重复通知
                 self._removed_this_round.clear()
 
@@ -641,20 +649,19 @@ class HostedMode:
                 # 第一轮：军师收到话题，发表初始分析
                 arb_prompt = (
                     self._init_prefix(arb_ai, initialized, ai_list)
-                    + removal_notice
                     + build_arbiter_first_prompt(
                         my_name=arb_ai["name"],
                         topic=topic,
                         all_ai_names=[a["name"] for a in ai_list if a["name"] not in self._removed_ais],
                         end_signal=self.end_signal,
                         arbitration_signal=self.arbitration_signal,
+                        system_notice=system_notice,
                     )
                 )
             else:
                 # 后续轮：军师收到上一轮所有谋士的回复
                 arb_prompt = (
                     self._init_prefix(arb_ai, initialized, ai_list)
-                    + removal_notice
                     + build_arbiter_round_prompt(
                         my_name=arb_ai["name"],
                         topic=topic,
@@ -663,6 +670,7 @@ class HostedMode:
                         round_num=round_count + 1,
                         end_signal=self.end_signal,
                         arbitration_signal=self.arbitration_signal,
+                        system_notice=system_notice,
                     )
                 )
 
@@ -1008,24 +1016,30 @@ class HostedMode:
             # Step 1: 军师先发言
             focal_points = extract_focal_points(prev_round_replies) if prev_round_replies else ""
 
-            # 构建AI剔除通知（如果有AI在本轮或上一轮被剔除）
-            removal_notice = ""
+            # 构建统一系统通知（AI变动等），格式为【系统通知】块
+            system_notice = ""
             if self._removed_this_round:
                 removal_lines = [f"  - {name}：{reason}" for name, reason in self._removed_this_round.items()]
-                removal_notice = "\n【⚠️ AI变动通知】\n以下AI已被移出议事厅，不再参与讨论，请勿等待他们的回复：\n" + "\n".join(removal_lines) + "\n"
+                system_notice = "【系统通知】\n以下AI已被移出议事厅，不再参与讨论，无需等待他们的回复：\n" + "\n".join(removal_lines) + "\n"
                 self._removed_this_round.clear()
 
             if round_count == 0:
                 # 第一轮追问：军师收到用户消息
+                sn_parts = []
+                sn_parts.append(f"  - 主公追问：{user_message}")
+                if system_notice:
+                    # system_notice 已有【系统通知】头，取出内容部分追加
+                    sn_content = system_notice.replace("【系统通知】\n", "").rstrip("\n")
+                    sn_parts.append(sn_content)
+                full_system_notice = "【系统通知】\n" + "\n".join(sn_parts) + "\n"
                 arb_prompt = (
                     self._init_prefix(arb_ai, initialized, ai_list)
-                    + removal_notice
-                    + f"【主公追问】\n{user_message}\n\n请{arb_ai['name']}（军师）发表你的看法。"
+                    + full_system_notice
+                    + f"\n请{arb_ai['name']}（军师）针对以上主公追问发表你的看法。"
                 )
             else:
                 arb_prompt = (
                     self._init_prefix(arb_ai, initialized, ai_list)
-                    + removal_notice
                     + build_arbiter_round_prompt(
                         my_name=arb_ai["name"],
                         topic=user_message,
@@ -1034,6 +1048,7 @@ class HostedMode:
                         round_num=round_count + 1,
                         end_signal=self.end_signal,
                         arbitration_signal=self.arbitration_signal,
+                        system_notice=system_notice,
                     )
                 )
 
@@ -1251,10 +1266,18 @@ class HostedMode:
                 if progress_callback:
                     progress_callback("user_message", "主公", combined_msg)
 
+                # 构建AI剔除通知（如果有AI被剔除，密令中也附带通知）
+                removal_notice_for_supplement = ""
+                if self._removed_this_round:
+                    removal_lines = [f"  - {name}：{reason}" for name, reason in self._removed_this_round.items()]
+                    removal_notice_for_supplement = "\n".join(removal_lines)
+
                 if arb_ai:
                     prompt_user = (
                         self._init_prefix(arb_ai, initialized, ai_list)
-                        + build_supplement_prompt(combined_msg, arb_ai["name"], end_signal=self.end_signal)
+                        + build_supplement_prompt(combined_msg, arb_ai["name"],
+                                                  end_signal=self.end_signal,
+                                                  system_notice=removal_notice_for_supplement)
                     )
                     if progress_callback:
                         progress_callback("user_prompt", arb_ai["name"], prompt_user)
