@@ -810,6 +810,8 @@ class HostedMode:
                 progress_callback("status", "系统", f"✅ 第{current_round}轮：军师 {arb_ai['name']} 已发言")
 
             # Step 2: 大脑把军师的话发给所有谋士，谋士并行回复
+            # 重新过滤 strategist_ais，排除在军师发言期间被用户剔除的AI
+            strategist_ais = [a for a in strategist_ais if a["name"] not in self._removed_ais and a["name"] not in ai_disabled]
             if strategist_ais:
                 ai_prompts = {}
                 for ai in strategist_ais:
@@ -858,6 +860,11 @@ class HostedMode:
                     done_count += 1
                     try:
                         ai, reply, err = await future
+                        # 跳过在等待期间被用户剔除的AI
+                        if ai["name"] in self._removed_ais:
+                            log_info(f"[{ai['name']}] 已被用户剔除，跳过本次回复处理")
+                            total -= 1
+                            continue
                         if err is not None:
                             # 记录该AI连续失败次数
                             ai_name = ai["name"]
@@ -1191,6 +1198,8 @@ class HostedMode:
                 progress_callback("status", "系统", f"✅ 第{current_round}轮：军师 {arb_ai['name']} 已发言")
 
             # Step 2: 谋士并行回复
+            # 重新过滤 strategist_ais，排除在军师发言期间被用户剔除的AI
+            strategist_ais = [a for a in strategist_ais if a["name"] not in self._removed_ais and a["name"] not in ai_disabled]
             if strategist_ais:
                 ai_prompts = {}
                 for ai in strategist_ais:
@@ -1237,6 +1246,11 @@ class HostedMode:
                     done_count += 1
                     try:
                         ai, reply, err = await future
+                        # 跳过在等待期间被用户剔除的AI
+                        if ai["name"] in self._removed_ais:
+                            log_info(f"[{ai['name']}] 已被用户剔除，跳过本次回复处理")
+                            total -= 1
+                            continue
                         if err is not None:
                             ai_name = ai["name"]
                             ai_fail_count[ai_name] = ai_fail_count.get(ai_name, 0) + 1
