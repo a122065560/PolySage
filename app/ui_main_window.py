@@ -2202,6 +2202,10 @@ class MainWindow(QMainWindow):
         if role == "ai_reply":
             cs.append_ai(name, text)
             log_info(f"AI 回复 [{name}]: {text[:100]}...")
+        elif role == "round_marker":
+            # 轮次标记：显示在对话框
+            cs.append_status(text)
+            log_info(f"轮次标记: {text}")
         elif role == "waiting":
             self.hosted_tab._set_status(text)
             log_info(f"状态: {text}")

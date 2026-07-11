@@ -113,43 +113,27 @@ class HostedMode:
         """
         检测短回复重复：如果AI回复<=20字且与上次回复内容相同，累计计数。
         连续2次相同短回复则自动剔除该AI。
-
-        Args:
-            ai_name: AI名称
-            reply: 本次回复内容
-            ai_short_replies: {name: {"text": str, "count": int}} 记录上次短回复
-            ai_disabled: 已禁用的AI集合
-            progress_callback: 进度回调
-
-        Returns:
-            bool: True表示该AI被剔除，False表示正常
         """
-        SHORT_REPLY_THRESHOLD = 20  # 20字以内算短回复
-        SHORT_REPLY_MAX_COUNT = 2   # 重复2次即剔除
+        SHORT_REPLY_THRESHOLD = 20
+        SHORT_REPLY_MAX_COUNT = 2
 
         reply_stripped = reply.strip()
         if len(reply_stripped) > SHORT_REPLY_THRESHOLD:
-            # 回复正常长度，重置计数
             if ai_name in ai_short_replies:
                 del ai_short_replies[ai_name]
             return False
 
-        # 短回复，检查是否与上次相同
         prev = ai_short_replies.get(ai_name)
         if prev is None:
-            # 首次短回复，记录
             ai_short_replies[ai_name] = {"text": reply_stripped, "count": 1}
             log_info(f"[{ai_name}] 短回复检测（第1次，{len(reply_stripped)}字）：{reply_stripped[:30]}")
             return False
 
         if reply_stripped == prev["text"]:
-            # 与上次相同的短回复
             prev["count"] += 1
             count = prev["count"]
             log_warning(f"[{ai_name}] 短回复检测（第{count}次，{len(reply_stripped)}字）：{reply_stripped[:30]}")
-
             if count >= SHORT_REPLY_MAX_COUNT:
-                # 达到阈值，自动剔除
                 reason = f"连续{count}次相同短回复（{len(reply_stripped)}字），已失去讨论能力，自动剔除"
                 ai_disabled.add(ai_name)
                 self._removed_ais.add(ai_name)
@@ -158,15 +142,34 @@ class HostedMode:
                     progress_callback("status", "系统",
                         f"🚫 {ai_name} 连续{count}次相同短回复（'{reply_stripped[:20]}'），已自动剔除议事厅")
                 log_warning(f"[{ai_name}] 连续{count}次相同短回复，已自动剔除")
-                # 清除记录
                 del ai_short_replies[ai_name]
                 return True
         else:
-            # 不同的短回复，重置计数
             ai_short_replies[ai_name] = {"text": reply_stripped, "count": 1}
             log_info(f"[{ai_name}] 短回复检测（重置，{len(reply_stripped)}字）：{reply_stripped[:30]}")
-
         return False
+
+    def _build_compact_status(self, round_num: int, current_speaker: str,
+                              ai_list: list, spoken: set, failed: set,
+                              ai_disabled: set) -> str:
+        """
+        构建紧凑状态栏文本。
+        格式：第3轮【智谱清言回复中】DeepSeek(✓)通义千问(...)minimax(...)kimi(✕)
+        ✓=已发言 ✕=失败/超时 ...=等待中
+        """
+        parts = []
+        for a in ai_list:
+            name = a["name"]
+            if name in ai_disabled or name in self._removed_ais:
+                continue
+            if name in failed:
+                parts.append(f"{name}(✕)")
+            elif name in spoken:
+                parts.append(f"{name}(✓)")
+            else:
+                parts.append(f"{name}(...)")
+        speaker_str = f"【{current_speaker}回复中】" if current_speaker else ""
+        return f"第{round_num}轮{speaker_str}{' '.join(parts)}"
 
     def is_running(self) -> bool:
         """讨论是否正在进行。"""
@@ -574,6 +577,7 @@ class HostedMode:
         log_info("Phase 0+1 完成: 所有 AI 已并行收到文件和开场白")
         if progress_callback:
             progress_callback("status", "系统", "所有 AI 已就绪，开始正式讨论...")
+            progress_callback("round_marker", "系统", "━━ 第1轮讨论开始 ━━")
             progress_callback("discussion_start", "系统", "")  # 通知UI开始编号
 
         # ==============================================================
@@ -597,6 +601,9 @@ class HostedMode:
         ai_short_replies = {}  # 短回复检测 {name: {"text": str, "count": int}}
 
         while round_count < self.max_rounds:
+            # 每轮重置发言/失败状态
+            round_spoken = set()
+            round_failed = set()
             if self._stop_requested:
                 self._is_running = False
                 self._save_discussion_state(ai_list, pages, history)
@@ -748,14 +755,9 @@ class HostedMode:
 
             if progress_callback:
                 progress_callback("user_prompt", arb_ai["name"], arb_prompt)
-                # 构建轮次状态：已发言/未发言
-                all_names = [a["name"] for a in ai_list if a["name"] not in ai_disabled and a["name"] not in self._removed_ais]
-                spoken = []
-                unspoken = [n for n in all_names if n != arb_ai["name"]]
-                round_status = f"第{round_count + 1}轮 | 💬 {arb_ai['name']} 正在发言 | 已发言{len(spoken)}({','.join(spoken) if spoken else '无'}) 未发言{len(unspoken)}({','.join(unspoken) if unspoken else '无'})"
-                progress_callback("round_status", "系统", round_status)
-                progress_callback("status", "系统", f"第 {round_count + 1} 轮：军师 {arb_ai['name']} 正在发言...")
-                progress_callback("waiting", "系统", f"等待军师 {arb_ai['name']} 回复...")
+                # 状态栏：紧凑格式
+                progress_callback("round_status", "系统",
+                    self._build_compact_status(round_count + 1, arb_ai["name"], ai_list, round_spoken, round_failed, ai_disabled))
 
             # 军师发言：第一轮用文字发送话题，后续轮用txt文件发送（避免文字过长导致AI平台罢工）
             arb_force_file = (round_count > 0)
@@ -811,13 +813,10 @@ class HostedMode:
             log_info(f"[大脑] {arb_ai['name']} 第{current_round}轮发言 ({len(arb_reply_clean)}字) → msg#{disc_logger._msg_counter}")
             if progress_callback:
                 progress_callback("ai_reply", arb_ai["name"], f"[第{current_round}轮] {arb_reply_clean}")
-                # 更新轮次状态：军师已发言
-                all_names = [a["name"] for a in ai_list if a["name"] not in ai_disabled and a["name"] not in self._removed_ais]
-                spoken = [arb_ai["name"]]
-                unspoken = [n for n in all_names if n != arb_ai["name"]]
-                round_status = f"第{current_round}轮 | ✅ {arb_ai['name']} 已发言 | 已发言{len(spoken)}({','.join(spoken)}) 未发言{len(unspoken)}({','.join(unspoken) if unspoken else '无'})"
-                progress_callback("round_status", "系统", round_status)
-                progress_callback("status", "系统", f"✅ 第{current_round}轮：军师 {arb_ai['name']} 已发言")
+                round_spoken.add(arb_ai["name"])
+                # 状态栏更新
+                progress_callback("round_status", "系统",
+                    self._build_compact_status(current_round, "", ai_list, round_spoken, round_failed, ai_disabled))
 
             # Step 2: 大脑把军师的话发给所有谋士，谋士并行回复
             # 重新过滤 strategist_ais，排除在军师发言期间被用户剔除的AI
@@ -844,14 +843,9 @@ class HostedMode:
 
                 if progress_callback:
                     ai_names = ", ".join(a["name"] for a in strategist_ais)
-                    # 更新轮次状态：谋士正在并行回复
-                    all_names = [a["name"] for a in ai_list if a["name"] not in ai_disabled and a["name"] not in self._removed_ais]
-                    spoken = [arb_ai["name"]]
-                    unspoken = [a["name"] for a in strategist_ais]
-                    round_status = f"第{current_round}轮 | 💬 {ai_names} 正在回复 | 已发言{len(spoken)}({','.join(spoken)}) 未发言{len(unspoken)}({','.join(unspoken) if unspoken else '无'})"
-                    progress_callback("round_status", "系统", round_status)
-                    progress_callback("status", "系统", f"第 {round_count + 1} 轮：{ai_names} 正在并行回复...")
-                    progress_callback("waiting", "系统", f"等待 {ai_names} 回复...")
+                    # 状态栏：谋士正在回复
+                    progress_callback("round_status", "系统",
+                        self._build_compact_status(current_round, ai_names, ai_list, round_spoken, round_failed, ai_disabled))
 
                 # 并行发送+等待（谋士始终用txt文件接收内容，避免文字过长导致AI平台罢工）
                 async def _send_and_receive(ai: dict) -> tuple:
@@ -878,6 +872,7 @@ class HostedMode:
                         if err is not None:
                             # 记录该AI连续失败次数
                             ai_name = ai["name"]
+                            round_failed.add(ai_name)
                             ai_fail_count[ai_name] = ai_fail_count.get(ai_name, 0) + 1
                             fail_count = ai_fail_count[ai_name]
                             # Bug6: 超时2次即自动剔除
@@ -933,12 +928,10 @@ class HostedMode:
                             log_info(f"[大脑] {ai['name']} 第{current_round}轮发言 ({len(reply_clean)}字) → msg#{msg_id}")
                             if progress_callback:
                                 progress_callback("ai_reply", ai["name"], f"[第{current_round}轮] {reply_clean}")
-                                # 更新轮次状态：谋士已回复
-                                spoken.append(ai["name"])
-                                remaining_unspoken = [n for n in all_names if n not in spoken and n not in self._removed_ais]
-                                round_status = f"第{current_round}轮 | ✅ {ai['name']} 已回复 | 已发言{len(spoken)}({','.join(spoken)}) 未发言{len(remaining_unspoken)}({','.join(remaining_unspoken) if remaining_unspoken else '无'})"
-                                progress_callback("round_status", "系统", round_status)
-                                progress_callback("status", "系统", f"✅ 第{current_round}轮：{ai['name']} 已回复 ({done_count}/{total})")
+                                round_spoken.add(ai["name"])
+                                # 状态栏更新
+                                progress_callback("round_status", "系统",
+                                    self._build_compact_status(current_round, "", ai_list, round_spoken, round_failed, ai_disabled))
                         else:
                             for t in tasks:
                                 if not t.done():
@@ -946,15 +939,13 @@ class HostedMode:
                             return result
 
                     except asyncio.TimeoutError:
+                        # 软超时：未完成的AI标记为失败
+                        for t, ai in zip(tasks, strategist_ais):
+                            if not t.done():
+                                round_failed.add(ai["name"])
                         if progress_callback:
-                            # 找出未完成的AI名称
-                            pending_ais = []
-                            for t, ai in zip(tasks, strategist_ais):
-                                if not t.done():
-                                    pending_ais.append(ai["name"])
-                            pending_names = ", ".join(pending_ais) if pending_ais else "未知AI"
-                            remaining = total - done_count + 1
-                            progress_callback("status", "系统", f"⏰ 软超时 {soft_timeout}s，{remaining} 个谋士本轮跳过（{pending_names}）")
+                            progress_callback("round_status", "系统",
+                                self._build_compact_status(current_round, "", ai_list, round_spoken, round_failed, ai_disabled))
                         break
                     except asyncio.CancelledError:
                         raise
@@ -973,6 +964,10 @@ class HostedMode:
             # Step 3: 大脑统筹汇总，更新上一轮回复
             prev_round_replies = round_replies
 
+            # 对话框：轮次结束标记
+            if progress_callback:
+                progress_callback("round_marker", "系统", f"━━ 第{current_round}轮讨论结束 ━━")
+
             if len(round_replies) < 2:
                 # 只有军师回复，没有谋士回复
                 consecutive_failures += 1
@@ -987,6 +982,9 @@ class HostedMode:
 
             consecutive_failures = 0
             round_count += 1
+            # 对话框：下一轮开始标记
+            if progress_callback and round_count < self.max_rounds:
+                progress_callback("round_marker", "系统", f"━━ 第{round_count + 1}轮讨论开始 ━━")
 
         # 达到最大轮数，强制军师结案
         if self.arbitrator and self.arbitrator != "auto":
@@ -1089,6 +1087,10 @@ class HostedMode:
         # 被剔除的AI不参与讨论，无需每轮重复提示
 
         while round_count < self.max_rounds:
+            # 每轮重置发言/失败状态
+            round_spoken = set()
+            round_failed = set()
+
             if self._stop_requested:
                 self._is_running = False
                 return {
@@ -1153,16 +1155,11 @@ class HostedMode:
             if progress_callback and round_count == 0:
                 progress_callback("user_message", "主公", user_message)
                 progress_callback("user_prompt", arb_ai["name"], arb_prompt)
-                progress_callback("status", "系统", f"追问：军师 {arb_ai['name']} 正在发言...")
-                progress_callback("waiting", "系统", f"等待军师 {arb_ai['name']} 回复...")
 
-            # 更新轮次状态
+            # 状态栏：紧凑格式
             if progress_callback:
-                all_names = [a["name"] for a in ai_list if a["name"] not in ai_disabled and a["name"] not in self._removed_ais]
-                spoken = []
-                unspoken = [n for n in all_names if n != arb_ai["name"]]
-                round_status = f"第{round_count + 1}轮 | 💬 {arb_ai['name']} 正在发言 | 已发言{len(spoken)}({','.join(spoken) if spoken else '无'}) 未发言{len(unspoken)}({','.join(unspoken) if unspoken else '无'})"
-                progress_callback("round_status", "系统", round_status)
+                progress_callback("round_status", "系统",
+                    self._build_compact_status(round_count + 1, arb_ai["name"], ai_list, round_spoken, round_failed, ai_disabled))
 
             # 军师发言：第一轮用文字发送，后续轮用txt文件（避免文字过长导致AI平台罢工）
             arb_force_file = (round_count > 0)
@@ -1210,13 +1207,9 @@ class HostedMode:
             history.append(format_history_entry(arb_ai["name"], f"[第{current_round}轮] {arb_reply_clean}"))
             if progress_callback:
                 progress_callback("ai_reply", arb_ai["name"], f"[第{current_round}轮] {arb_reply_clean}")
-                # 更新轮次状态：军师已发言
-                all_names = [a["name"] for a in ai_list if a["name"] not in ai_disabled and a["name"] not in self._removed_ais]
-                spoken = [arb_ai["name"]]
-                unspoken = [n for n in all_names if n != arb_ai["name"]]
-                round_status = f"第{current_round}轮 | ✅ {arb_ai['name']} 已发言 | 已发言{len(spoken)}({','.join(spoken)}) 未发言{len(unspoken)}({','.join(unspoken) if unspoken else '无'})"
-                progress_callback("round_status", "系统", round_status)
-                progress_callback("status", "系统", f"✅ 第{current_round}轮：军师 {arb_ai['name']} 已发言")
+                round_spoken.add(arb_ai["name"])
+                progress_callback("round_status", "系统",
+                    self._build_compact_status(current_round, "", ai_list, round_spoken, round_failed, ai_disabled))
 
             # Step 2: 谋士并行回复
             # 重新过滤 strategist_ais，排除在军师发言期间被用户剔除的AI
@@ -1243,13 +1236,9 @@ class HostedMode:
 
                 if progress_callback:
                     ai_names = ", ".join(a["name"] for a in strategist_ais)
-                    # 更新轮次状态：谋士正在并行回复
-                    all_names = [a["name"] for a in ai_list if a["name"] not in ai_disabled and a["name"] not in self._removed_ais]
-                    spoken = [arb_ai["name"]]
-                    unspoken = [a["name"] for a in strategist_ais]
-                    round_status = f"第{current_round}轮 | 💬 {ai_names} 正在回复 | 已发言{len(spoken)}({','.join(spoken)}) 未发言{len(unspoken)}({','.join(unspoken) if unspoken else '无'})"
-                    progress_callback("round_status", "系统", round_status)
-                    progress_callback("status", "系统", f"第 {round_count + 1} 轮：{ai_names} 正在并行回复...")
+                    # 状态栏：谋士正在回复
+                    progress_callback("round_status", "系统",
+                        self._build_compact_status(current_round, ai_names, ai_list, round_spoken, round_failed, ai_disabled))
 
                 async def _send_and_receive_cont(ai: dict) -> tuple:
                     try:
@@ -1274,6 +1263,7 @@ class HostedMode:
                             continue
                         if err is not None:
                             ai_name = ai["name"]
+                            round_failed.add(ai_name)
                             ai_fail_count[ai_name] = ai_fail_count.get(ai_name, 0) + 1
                             fail_count = ai_fail_count[ai_name]
                             # Bug6: 超时2次即自动剔除
@@ -1321,27 +1311,22 @@ class HostedMode:
                             history.append(format_history_entry(ai["name"], f"[第{current_round}轮] {reply_clean}"))
                             if progress_callback:
                                 progress_callback("ai_reply", ai["name"], f"[第{current_round}轮] {reply_clean}")
-                                # 更新轮次状态：谋士已回复
-                                spoken.append(ai["name"])
-                                remaining_unspoken = [n for n in all_names if n not in spoken and n not in self._removed_ais]
-                                round_status = f"第{current_round}轮 | ✅ {ai['name']} 已回复 | 已发言{len(spoken)}({','.join(spoken)}) 未发言{len(remaining_unspoken)}({','.join(remaining_unspoken) if remaining_unspoken else '无'})"
-                                progress_callback("round_status", "系统", round_status)
-                                progress_callback("status", "系统", f"✅ 第{current_round}轮：{ai['name']} 已回复 ({done_count}/{total})")
+                                round_spoken.add(ai["name"])
+                                progress_callback("round_status", "系统",
+                                    self._build_compact_status(current_round, "", ai_list, round_spoken, round_failed, ai_disabled))
                         else:
                             for t in tasks:
                                 if not t.done():
                                     t.cancel()
                             return result
                     except asyncio.TimeoutError:
+                        # 软超时：未完成的AI标记为失败
+                        for t, ai in zip(tasks, strategist_ais):
+                            if not t.done():
+                                round_failed.add(ai["name"])
                         if progress_callback:
-                            # 找出未完成的AI名称
-                            pending_ais = []
-                            for t, ai in zip(tasks, strategist_ais):
-                                if not t.done():
-                                    pending_ais.append(ai["name"])
-                            pending_names = ", ".join(pending_ais) if pending_ais else "未知AI"
-                            remaining = total - done_count + 1
-                            progress_callback("status", "系统", f"⏰ 软超时 {soft_timeout}s，{remaining} 个谋士跳过（{pending_names}）")
+                            progress_callback("round_status", "系统",
+                                self._build_compact_status(current_round, "", ai_list, round_spoken, round_failed, ai_disabled))
                         break
                     except asyncio.CancelledError:
                         raise
@@ -1408,6 +1393,11 @@ class HostedMode:
                             return result
 
             prev_round_replies = round_replies
+
+            # 对话框：轮次结束标记
+            if progress_callback:
+                progress_callback("round_marker", "系统", f"━━ 第{current_round}轮讨论结束 ━━")
+
             if len(round_replies) < 2:
                 consecutive_failures += 1
                 if consecutive_failures >= 3:
@@ -1417,6 +1407,9 @@ class HostedMode:
 
             consecutive_failures = 0
             round_count += 1
+            # 对话框：下一轮开始标记
+            if progress_callback and round_count < self.max_rounds:
+                progress_callback("round_marker", "系统", f"━━ 第{round_count + 1}轮讨论开始 ━━")
 
         if self.arbitrator and self.arbitrator != "auto":
             if progress_callback:
