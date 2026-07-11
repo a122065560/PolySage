@@ -19,11 +19,13 @@ echo ""
 
 # 变量
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$SCRIPT_DIR"
 
 DIST_DIR="$SCRIPT_DIR/dist"
 BUILD_DIR="$SCRIPT_DIR/build"
-DMG_NAME="${DMG_NAME:-聚慧-1.1.0-arm64.dmg}"
+OUTPUT_DIR="$PROJECT_DIR"
+DMG_NAME="${DMG_NAME:-聚慧-v1.0.0-arm64.dmg}"
 
 # ----------------------------------------------------------------
 # Step 1: 检查依赖
@@ -323,7 +325,7 @@ echo ""
 # ----------------------------------------------------------------
 echo -e "${YELLOW}[6/7] 生成 .dmg 安装包...${NC}"
 
-DMG_PATH="$DIST_DIR/$DMG_NAME"
+DMG_PATH="$OUTPUT_DIR/$DMG_NAME"
 DMG_STAGING="$DIST_DIR/dmg_staging"
 
 rm -rf "$DMG_STAGING" "$DMG_PATH"
@@ -363,9 +365,16 @@ echo -e "${GREEN}  🎉 打包成功！${NC}"
 echo -e "${BLUE}================================================${NC}"
 echo ""
 echo -e "${GREEN}📦 产物位置：${NC}"
-echo -e "  App:  $DIST_DIR/聚慧.app"
+echo -e "  App:  $OUTPUT_DIR/聚慧.app"
 echo -e "  DMG:  $DMG_PATH"
 echo ""
+
+# 复制 .app 到项目根目录（与 app/ 同级）
+if [ -d "$DIST_DIR/聚慧.app" ]; then
+    rm -rf "$OUTPUT_DIR/聚慧.app"
+    cp -R "$DIST_DIR/聚慧.app" "$OUTPUT_DIR/聚慧.app"
+    echo -e "${GREEN}  ✅ .app 已复制到项目根目录${NC}"
+fi
 
 APP_SIZE=$(du -sh "$DIST_DIR/聚慧.app" 2>/dev/null | cut -f1)
 DMG_SIZE=$(du -sh "$DMG_PATH" 2>/dev/null | cut -f1)
@@ -430,10 +439,10 @@ if git rev-parse --git-dir > /dev/null 2>&1; then
                         echo -e "${GREEN}  ✅ Windows 构建成功！正在下载 .exe...${NC}"
                         
                         # 下载 Windows 产物
-                        gh run download "$RUN_ID" -n windows-exe -D "$DIST_DIR/windows" 2>/dev/null || true
+                        gh run download "$RUN_ID" -n windows-exe -D "$OUTPUT_DIR/windows" 2>/dev/null || true
                         
                         # 查找下载的 .exe
-                        EXE_FILE=$(find "$DIST_DIR/windows" -name "*.exe" -type f 2>/dev/null | head -1)
+                        EXE_FILE=$(find "$OUTPUT_DIR/windows" -name "*.exe" -type f 2>/dev/null | head -1)
                         if [ -n "$EXE_FILE" ]; then
                             EXE_SIZE=$(du -sh "$EXE_FILE" 2>/dev/null | cut -f1)
                             echo -e "${GREEN}  ✅ Windows .exe 已下载${NC}"
@@ -470,4 +479,13 @@ else
     echo -e "${BLUE}  初始化 git 仓库并推送到 GitHub 后可自动构建 Windows .exe${NC}"
 fi
 fi  # 结束 GITHUB_ACTIONS 判断
+echo ""
+
+# ----------------------------------------------------------------
+# Step 9: 清理中间构建文件
+# ----------------------------------------------------------------
+echo -e "${YELLOW}[清理] 删除中间构建文件...${NC}"
+rm -rf "$BUILD_DIR"
+rm -rf "$DIST_DIR"
+echo -e "${GREEN}  ✅ build/ 和 dist/ 已清理${NC}"
 echo ""

@@ -97,7 +97,7 @@ jobs:
         run: echo "C:\Program Files (x86)\Inno Setup 6" >> $GITHUB_PATH
 
       - name: 生成 Windows 安装包
-        run: iscc /DMyAppVersion=${{ env.VERSION }} installer.iss
+        run: iscc /DMyAppVersion=${{ env.VERSION }} common/installer.iss
 
       - name: 代码签名
         if: ${{ env.CERTIFICATE_BASE64 != '' }}

@@ -5,8 +5,8 @@ __pycache__/
 *.so
 *.egg-info/
 *.egg
-dist/
-build/
+app/dist/
+app/build/
 *.spec.bak
 # PyInstaller 自动生成的 spec（PolySage.spec 是 Windows CI 用的，需要保留）
 聚慧.spec
@@ -41,14 +41,12 @@ secrets/
 playwright-report/
 test-results/
 
-# 构建产物
-*.dmg
-*.exe
-*.msi
+# 构建产物（build/ 目录中的 .app .dmg .exe 不提交）
+build/*.dmg
+build/*.exe
+build/*.msi
+build/聚慧.app
 
 # 临时文件
 tmp/
 temp/
-
-# 本地文档（不同步到 GitHub）
-HelpWord/
