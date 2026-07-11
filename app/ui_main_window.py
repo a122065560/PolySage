@@ -1949,44 +1949,46 @@ class HostedModeTab(QWidget):
         self._render_status_html(self._status_text, self._dot_count)
 
     def _render_status_html(self, text: str, dot_count: int):
-        """将状态文本渲染为带颜色的HTML。"""
+        """将状态文本渲染为带颜色的HTML。
+        只变色小括号内的符号，AI名和括号保持默认色。
+        省略号用空格补齐固定宽度，避免撑大行间距。
+        """
         import re
         if not text:
             self.status_bar.setText("")
             return
 
-        # 动态省略号
-        dots = "." * dot_count
+        # 动态省略号，用空格补齐到3字符宽度: "." → ".  ", ".." → ".. ", "..." → "..."
+        dots_raw = "." * dot_count
+        dots = dots_raw + " " * (3 - dot_count)
 
-        # 替换各状态标记为带颜色的HTML span
-        # 格式: 【第n轮】---【AI(✓)】【AI(?)】【AI(...)】【AI(✕)】
         result = text
 
-        # 先替换正在回复的 AI(name(...)) → 橙色动态点
+        # 正在回复: 【AI(...)】 → 【AI(<橙色动态点>)】
         def replace_speaking(match):
             name = match.group(1)
-            return f'<span style="color:#FF6B00;">【{name}({dots})】</span>'
+            return f'【{name}(<span style="color:#FF6B00;">{dots}</span>)】'
 
         result = re.sub(r'【(.+?)\(\.\.\.\)】', replace_speaking, result)
 
-        # 替换已回复 AI(name(✓)) → 绿色
+        # 已回复: 【AI(✓)】 → 【AI(<绿色>✓</绿色>)】
         def replace_spoken(match):
             name = match.group(1)
-            return f'<span style="color:#16A34A;">【{name}(✓)】</span>'
+            return f'【{name}(<span style="color:#16A34A;">✓</span>)】'
 
         result = re.sub(r'【(.+?)\(✓\)】', replace_spoken, result)
 
-        # 替换失败 AI(name(✕)) → 红色
+        # 失败: 【AI(✕)】 → 【AI(<红色>✕</红色>)】
         def replace_failed(match):
             name = match.group(1)
-            return f'<span style="color:#DC2626;">【{name}(✕)】</span>'
+            return f'【{name}(<span style="color:#DC2626;">✕</span>)】'
 
         result = re.sub(r'【(.+?)\(✕\)】', replace_failed, result)
 
-        # 替换等待中 AI(name(?)) → 黄色
+        # 等待中: 【AI(?)】 → 【AI(<黄色>?</黄色>)】
         def replace_waiting(match):
             name = match.group(1)
-            return f'<span style="color:#D97706;">【{name}(?)】</span>'
+            return f'【{name}(<span style="color:#D97706;">?</span>)】'
 
         result = re.sub(r'【(.+?)\(\?\)】', replace_waiting, result)
 

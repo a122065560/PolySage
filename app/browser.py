@@ -3378,13 +3378,18 @@ class ChromeManager:
                     selector = step.get("selector", "")
                     if not selector:
                         continue
-                    await page.evaluate("""
-                        (sel) => {
-                            let el = null;
-                            try { el = document.querySelector(sel); } catch(e) {}
-                            if (el) el.click();
-                        }
-                    """, selector)
+                    # 优先使用 Playwright 原生点击（trusted event），兼容 Radix UI 等 React 组件
+                    try:
+                        await page.click(selector, timeout=3000)
+                    except Exception:
+                        # 回退到 JS click
+                        await page.evaluate("""
+                            (sel) => {
+                                let el = null;
+                                try { el = document.querySelector(sel); } catch(e) {}
+                                if (el) el.click();
+                            }
+                        """, selector)
 
                 elif action == "wait":
                     ms = step.get("ms", 500)
@@ -3395,9 +3400,10 @@ class ChromeManager:
                     selector = step.get("selector", "")
                     if not text:
                         continue
-                    await page.evaluate("""
+                    # 先通过 JS 找到目标元素的坐标，再用 Playwright 原生点击（trusted event）
+                    coords = await page.evaluate("""
                         async (config) => {
-                            let clicked = false;
+                            let found = null;
                             // 策略1：使用 CSS 选择器范围搜索
                             if (config.selector) {
                                 const opts = document.querySelectorAll(config.selector);
@@ -3412,19 +3418,18 @@ class ChromeManager:
                                                 cls.includes('option') ||
                                                 role === 'option' || role === 'menuitem' ||
                                                 target.tagName === 'LI' || target.tagName === 'BUTTON') {
-                                                target.click();
-                                                clicked = true;
+                                                found = target;
                                                 break;
                                             }
                                             target = target.parentElement;
                                         }
-                                        if (!clicked) { opt.click(); clicked = true; }
+                                        if (!found) found = opt;
                                         break;
                                     }
                                 }
                             }
                             // 策略2：全局文本匹配回退
-                            if (!clicked) {
+                            if (!found) {
                                 const allElements = document.querySelectorAll(
                                     'div, li, span, button, a, p'
                                 );
@@ -3448,15 +3453,25 @@ class ChromeManager:
                                                 }
                                                 parent = parent.parentElement;
                                             }
-                                            clickTarget.click();
-                                            clicked = true;
+                                            found = clickTarget;
                                             break;
                                         }
                                     }
                                 }
                             }
+                            if (found) {
+                                const r = found.getBoundingClientRect();
+                                return {x: r.x + r.width / 2, y: r.y + r.height / 2, found: true};
+                            }
+                            return {found: false};
                         }
                     """, {"text": text, "selector": selector})
+
+                    if coords and coords.get("found"):
+                        # 使用 Playwright 原生鼠标点击（trusted event，兼容 Radix UI）
+                        await page.mouse.click(coords["x"], coords["y"])
+                    else:
+                        log_warning(f"click_text: 未找到包含 '{text}' 的元素")
 
             # 记录本次尝试时间
             self._thinking_enable_cooldown[ai_name] = time.time()
