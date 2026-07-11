@@ -107,6 +107,67 @@ class HostedMode:
         self._removed_this_round[name] = reason
         log_info(f"AI [{name}] 被剔除（{reason}），不再发送/重建页面")
 
+    def _check_short_reply(self, ai_name: str, reply: str,
+                           ai_short_replies: dict, ai_disabled: set,
+                           progress_callback=None) -> bool:
+        """
+        检测短回复重复：如果AI回复<=20字且与上次回复内容相同，累计计数。
+        连续2次相同短回复则自动剔除该AI。
+
+        Args:
+            ai_name: AI名称
+            reply: 本次回复内容
+            ai_short_replies: {name: {"text": str, "count": int}} 记录上次短回复
+            ai_disabled: 已禁用的AI集合
+            progress_callback: 进度回调
+
+        Returns:
+            bool: True表示该AI被剔除，False表示正常
+        """
+        SHORT_REPLY_THRESHOLD = 20  # 20字以内算短回复
+        SHORT_REPLY_MAX_COUNT = 2   # 重复2次即剔除
+
+        reply_stripped = reply.strip()
+        if len(reply_stripped) > SHORT_REPLY_THRESHOLD:
+            # 回复正常长度，重置计数
+            if ai_name in ai_short_replies:
+                del ai_short_replies[ai_name]
+            return False
+
+        # 短回复，检查是否与上次相同
+        prev = ai_short_replies.get(ai_name)
+        if prev is None:
+            # 首次短回复，记录
+            ai_short_replies[ai_name] = {"text": reply_stripped, "count": 1}
+            log_info(f"[{ai_name}] 短回复检测（第1次，{len(reply_stripped)}字）：{reply_stripped[:30]}")
+            return False
+
+        if reply_stripped == prev["text"]:
+            # 与上次相同的短回复
+            prev["count"] += 1
+            count = prev["count"]
+            log_warning(f"[{ai_name}] 短回复检测（第{count}次，{len(reply_stripped)}字）：{reply_stripped[:30]}")
+
+            if count >= SHORT_REPLY_MAX_COUNT:
+                # 达到阈值，自动剔除
+                reason = f"连续{count}次相同短回复（{len(reply_stripped)}字），已失去讨论能力，自动剔除"
+                ai_disabled.add(ai_name)
+                self._removed_ais.add(ai_name)
+                self._removed_this_round[ai_name] = reason
+                if progress_callback:
+                    progress_callback("status", "系统",
+                        f"🚫 {ai_name} 连续{count}次相同短回复（'{reply_stripped[:20]}'），已自动剔除议事厅")
+                log_warning(f"[{ai_name}] 连续{count}次相同短回复，已自动剔除")
+                # 清除记录
+                del ai_short_replies[ai_name]
+                return True
+        else:
+            # 不同的短回复，重置计数
+            ai_short_replies[ai_name] = {"text": reply_stripped, "count": 1}
+            log_info(f"[{ai_name}] 短回复检测（重置，{len(reply_stripped)}字）：{reply_stripped[:30]}")
+
+        return False
+
     def is_running(self) -> bool:
         """讨论是否正在进行。"""
         return self._is_running
@@ -533,6 +594,7 @@ class HostedMode:
         consecutive_failures = 0  # 连续失败轮数
         ai_fail_count = {}  # 各AI连续失败计数 {name: count}
         ai_disabled = set()  # 已禁用的AI（连续失败超过阈值）
+        ai_short_replies = {}  # 短回复检测 {name: {"text": str, "count": int}}
 
         while round_count < self.max_rounds:
             if self._stop_requested:
@@ -707,6 +769,29 @@ class HostedMode:
             arb_reply = clean_text(arb_reply)
             arb_timestamp = datetime.datetime.now().strftime("%H:%M:%S")
 
+            # 短回复重复检测（军师也适用）
+            if self._check_short_reply(arb_ai["name"], arb_reply, ai_short_replies, ai_disabled, progress_callback):
+                # 军师被剔除，需要转移军师头衔
+                if progress_callback:
+                    progress_callback("status", "系统",
+                        f"⚠️ 军师 {arb_ai['name']} 短回复重复，已自动剔除")
+                # 找一个未被剔除的AI作为新军师
+                remaining = [a for a in ai_list if a["name"] not in ai_disabled and a["name"] not in self._removed_ais]
+                if remaining:
+                    arb_ai = remaining[0]
+                    self.arbitrator = arb_ai["name"]
+                    if progress_callback:
+                        progress_callback("status", "系统",
+                            f"⚖️ 军师头衔转给 {arb_ai['name']}")
+                    log_info(f"军师转移(短回复): {self._removed_this_round.get('prev_arb', '')} → {arb_ai['name']}")
+                    continue
+                else:
+                    if progress_callback:
+                        progress_callback("status", "系统", "⚠️ 所有AI均被剔除，讨论终止")
+                    self._is_running = False
+                    return {"history": history, "final_result": None,
+                            "ended_by": "所有AI均被剔除", "rounds": round_count}
+
             # 检查军师是否结案
             ended, result = await self._check_end(
                 arb_reply, arb_ai, history, done_set, done_state,
@@ -828,6 +913,11 @@ class HostedMode:
 
                         reply = clean_text(reply)
                         reply_ts = datetime.datetime.now().strftime("%H:%M:%S")
+
+                        # 短回复重复检测：<=20字且与上次相同，重复2次自动剔除
+                        if self._check_short_reply(ai["name"], reply, ai_short_replies, ai_disabled, progress_callback):
+                            # 该AI被剔除，跳过本次处理
+                            continue
 
                         # 检查是否结束
                         ended, result = await self._check_end(
@@ -988,6 +1078,7 @@ class HostedMode:
         consecutive_failures = 0
         ai_fail_count = {}  # 各AI连续失败计数
         ai_disabled = set()  # 已禁用的AI
+        ai_short_replies = {}  # 短回复检测 {name: {"text": str, "count": int}}
 
         # 找到军师AI
         arb_ai = None
@@ -1084,6 +1175,27 @@ class HostedMode:
 
             arb_reply = clean_text(arb_reply)
             arb_timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+
+            # 短回复重复检测（军师也适用）
+            if self._check_short_reply(arb_ai["name"], arb_reply, ai_short_replies, ai_disabled, progress_callback):
+                if progress_callback:
+                    progress_callback("status", "系统",
+                        f"⚠️ 军师 {arb_ai['name']} 短回复重复，已自动剔除")
+                remaining = [a for a in ai_list if a["name"] not in ai_disabled and a["name"] not in self._removed_ais]
+                if remaining:
+                    arb_ai = remaining[0]
+                    self.arbitrator = arb_ai["name"]
+                    if progress_callback:
+                        progress_callback("status", "系统",
+                            f"⚖️ 军师头衔转给 {arb_ai['name']}")
+                    log_info(f"军师转移(短回复): → {arb_ai['name']}")
+                    continue
+                else:
+                    if progress_callback:
+                        progress_callback("status", "系统", "⚠️ 所有AI均被剔除，讨论终止")
+                    self._is_running = False
+                    return {"history": history, "final_result": None,
+                            "ended_by": "所有AI均被剔除", "rounds": round_count}
 
             ended, result = await self._check_end(
                 arb_reply, arb_ai, history, done_set, done_state,
@@ -1196,6 +1308,12 @@ class HostedMode:
                         ai_fail_count[ai["name"]] = 0
                         reply = clean_text(reply)
                         reply_ts = datetime.datetime.now().strftime("%H:%M:%S")
+
+                        # 短回复重复检测：<=20字且与上次相同，重复2次自动剔除
+                        if self._check_short_reply(ai["name"], reply, ai_short_replies, ai_disabled, progress_callback):
+                            # 该AI被剔除，跳过本次处理
+                            continue
+
                         ended, result = await self._check_end(
                             reply, ai, history, done_set, done_state,
                             ai_list, pages, progress_callback, round_count
