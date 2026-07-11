@@ -21,7 +21,7 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 # 默认配置版本号（每次修改 DEFAULT_CONFIG 中的选择器/思考模式时递增）
 # 用于判断用户配置是否需要同步更新默认平台的配置
-DEFAULT_CONFIG_VERSION = 3
+DEFAULT_CONFIG_VERSION = 4
 
 # 默认配置
 DEFAULT_CONFIG = {
@@ -234,16 +234,14 @@ DEFAULT_CONFIG = {
             "thinking_mode": {
                 "enabled": True,
                 "detect": {
-                    "type": "toggle",
-                    "selector": "button:has-text('深度思考'), div[class*='think']:has-text('深度思考')",
-                    "label_text": "深度思考",
-                    "active_attr": "aria-pressed",
-                    "active_value": "true",
+                    "type": "dropdown",
+                    "label_selector": "div[class*='mode'] [aria-selected='true'], div[class*='mode'] .semi-segmented-item-selected, div[class*='mode-selected'], div[role='tab'][aria-selected='true']",
+                    "label_text": "专家",
                 },
                 "enable_steps": [
-                    {"action": "click_text", "text": "深度思考",
-                     "selector": "button, div[class*='think'], div[class*='mode'], div[class*='toggle']"},
-                    {"action": "wait", "ms": 800},
+                    {"action": "click_text", "text": "专家",
+                     "selector": "div[class*='mode'] div[class*='item'], div[class*='segment'] div[class*='item'], div[role='tab'], button[class*='mode'], li[class*='item']"},
+                    {"action": "wait", "ms": 1000},
                 ],
             },
         },
