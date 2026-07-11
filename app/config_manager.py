@@ -21,7 +21,7 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 # 默认配置版本号（每次修改 DEFAULT_CONFIG 中的选择器/思考模式时递增）
 # 用于判断用户配置是否需要同步更新默认平台的配置
-DEFAULT_CONFIG_VERSION = 4
+DEFAULT_CONFIG_VERSION = 5
 
 # 默认配置
 DEFAULT_CONFIG = {
@@ -235,12 +235,14 @@ DEFAULT_CONFIG = {
                 "enabled": True,
                 "detect": {
                     "type": "dropdown",
-                    "label_selector": "div[class*='mode'] [aria-selected='true'], div[class*='mode'] .semi-segmented-item-selected, div[class*='mode-selected'], div[role='tab'][aria-selected='true']",
+                    "label_selector": "button[aria-haspopup='menu']",
                     "label_text": "专家",
                 },
                 "enable_steps": [
+                    {"action": "click", "selector": "button[aria-haspopup='menu']"},
+                    {"action": "wait", "ms": 1000},
                     {"action": "click_text", "text": "专家",
-                     "selector": "div[class*='mode'] div[class*='item'], div[class*='segment'] div[class*='item'], div[role='tab'], button[class*='mode'], li[class*='item']"},
+                     "selector": "[role='menuitem'], [role='option'], div[data-slot], li, button, div[class*='item'], div[class*='option']"},
                     {"action": "wait", "ms": 1000},
                 ],
             },

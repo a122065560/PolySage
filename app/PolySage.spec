@@ -10,7 +10,7 @@ from PyInstaller.utils.hooks import copy_metadata
 IS_MACOS = sys.platform == 'darwin'
 IS_WINDOWS = sys.platform == 'win32'
 
-datas = [('logo_ui.png', '.'), ('logo_ui@2x.png', '.'), ('qt.conf', '.'), ('Info.plist', '.')]
+datas = [('logo_ui.png', '.'), ('logo_ui@2x.png', '.')]
 binaries = []
 hiddenimports = ['PyQt6', 'PyQt6.QtCore', 'PyQt6.QtGui', 'PyQt6.QtWidgets', 'PyQt6.sip', 'qasync', 'playwright', 'playwright.async_api', 'playwright._impl', 'openai', 'platform_adapter', 'macos_adapter', 'windows_adapter']
 datas += collect_data_files('qasync')
@@ -21,8 +21,15 @@ hiddenimports += collect_submodules('PyQt6')
 tmp_ret = collect_all('playwright')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
-# 不再将 Chromium 浏览器（344MB）打包进 app
-# browser.py 的 _try_download_chromium() 会在首次运行时自动下载到 ~/Library/Caches/PolySage/browsers/
+# 显式添加 Playwright Chromium 浏览器二进制（PLAYWRIGHT_BROWSERS_PATH=0 下载到包目录）
+# 确保 .local-browsers 目录被 PyInstaller 打包（collect_all 可能遗漏隐藏目录）
+try:
+    import playwright as _pw
+    _pw_browsers = os.path.join(os.path.dirname(_pw.__file__), 'driver', 'package', '.local-browsers')
+    if os.path.isdir(_pw_browsers):
+        datas += [(_pw_browsers, os.path.join('playwright', 'driver', 'package', '.local-browsers'))]
+except ImportError:
+    pass
 
 exclude_list = ['PyQt6.Qt6', 'tkinter', 'matplotlib', 'numpy', 'pandas', 'PyQt5', 'PySide6', 'PyQt6.Qt3DCore', 'PyQt6.Qt3DRender', 'PyQt6.Qt3DAnimation', 'PyQt6.Qt3DExtras', 'PyQt6.Qt3DInput', 'PyQt6.Qt3DLogic', 'PyQt6.QtBluetooth', 'PyQt6.QtCharts', 'PyQt6.QtDataVisualization', 'PyQt6.QtDesigner', 'PyQt6.QtHelp', 'PyQt6.QtMultimedia', 'PyQt6.QtMultimediaWidgets', 'PyQt6.QtNetwork', 'PyQt6.QtNfc', 'PyQt6.QtOpenGL', 'PyQt6.QtOpenGLWidgets', 'PyQt6.QtPdf', 'PyQt6.QtPdfWidgets', 'PyQt6.QtPositioning', 'PyQt6.QtPrintSupport', 'PyQt6.QtQml', 'PyQt6.QtQuick', 'PyQt6.QtQuick3D', 'PyQt6.QtQuickControls2', 'PyQt6.QtQuickWidgets', 'PyQt6.QtRemoteObjects', 'PyQt6.QtSensors', 'PyQt6.QtSerialPort', 'PyQt6.QtSpatialAudio', 'PyQt6.QtSql', 'PyQt6.QtTest', 'PyQt6.QtTextToSpeech', 'PyQt6.QtWebChannel', 'PyQt6.QtWebEngineCore', 'PyQt6.QtWebEngineQuick', 'PyQt6.QtWebEngineWidgets', 'PyQt6.QtWebSockets', 'PyQt6.QtXml']
 if IS_MACOS:
@@ -40,37 +47,6 @@ a = Analysis(
     excludes=exclude_list,
     noarchive=False,
 )
-
-# 过滤掉不需要的 Qt6 插件和 QML（PolySage 只用 QtWidgets，不用 QML/多媒体/SQL/3D等）
-_qt6_exclude_patterns = [
-    '/qml/',                          # Qt6 QML 运行时（12MB）
-    '/plugins/multimedia/',           # 多媒体插件（16MB）
-    '/plugins/sqldrivers/',            # SQL 驱动（1.9MB）
-    '/plugins/position/',             # 定位
-    '/plugins/texttospeech/',         # 语音合成
-    '/plugins/assetimporters/',       # 3D 资产导入（2MB）
-    '/plugins/geometryloaders/',      # 几何加载器
-    '/plugins/renderers/',            # 渲染器（OpenGL/RHI）
-    '/plugins/renderplugins/',        # 渲染插件
-    '/plugins/sceneparsers/',         # 场景解析（2.3MB）
-    '/plugins/sensors/',              # 传感器
-    '/plugins/qmllint/',              # QML lint
-    '/plugins/webview/',              # Webview
-    '/translations/',                 # 翻译文件（保留 zh_CN）
-]
-def _should_exclude_qt6(item_path):
-    """检查是否应该排除该 Qt6 文件"""
-    for pattern in _qt6_exclude_patterns:
-        if pattern in item_path:
-            # 保留中文翻译
-            if pattern == '/translations/' and 'zh_CN' in item_path:
-                return False
-            return True
-    return False
-
-a.binaries = [b for b in a.binaries if not _should_exclude_qt6(b[0])]
-a.datas = [d for d in a.datas if not _should_exclude_qt6(d[0])]
-
 pyz = PYZ(a.pure)
 
 exe_kwargs = dict(
