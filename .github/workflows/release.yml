@@ -99,6 +99,11 @@ jobs:
       - name: 生成 Windows 安装包
         run: iscc /DMyAppVersion=${{ env.VERSION }} common/installer.iss
 
+      - name: 重命名为中文名
+        run: |
+          mv "PolySage-${{ env.VERSION }}-Windows.exe" "聚慧-${{ env.VERSION }}-Windows.exe"
+          ls -la "聚慧-${{ env.VERSION }}-Windows.exe"
+
       - name: 代码签名
         if: ${{ env.CERTIFICATE_BASE64 != '' }}
         shell: pwsh
