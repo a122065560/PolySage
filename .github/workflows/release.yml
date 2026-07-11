@@ -101,7 +101,7 @@ jobs:
 
       - name: 重命名为中文名
         run: |
-          mv "PolySage-${{ env.VERSION }}-Windows.exe" "聚慧-${{ env.VERSION }}-Windows.exe"
+          mv "common/PolySage-${{ env.VERSION }}-Windows.exe" "聚慧-${{ env.VERSION }}-Windows.exe"
           ls -la "聚慧-${{ env.VERSION }}-Windows.exe"
 
       - name: 代码签名
