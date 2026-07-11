@@ -237,7 +237,8 @@ class HostedMode:
 
     async def _send_to(self, ai: dict, pages: dict, prompt: str,
                        progress_callback, timeout: int = None,
-                       fast_wait: bool = False):
+                       fast_wait: bool = False,
+                       force_file_upload: bool = False):
         timeout = timeout or self.timeout
         max_retries = 3  # 页面失效时最多重建3次
 
@@ -264,7 +265,8 @@ class HostedMode:
 
                 reply = await self.chrome.send_and_wait(
                     page, prompt, ai,
-                    timeout=timeout, fast_wait=fast_wait
+                    timeout=timeout, fast_wait=fast_wait,
+                    force_file_upload=force_file_upload
                 )
 
                 # === 大脑后处理：思考过滤（不再做二次提取） ===
@@ -660,7 +662,10 @@ class HostedMode:
                 progress_callback("status", "系统", f"第 {round_count + 1} 轮：军师 {arb_ai['name']} 正在发言...")
                 progress_callback("waiting", "系统", f"等待军师 {arb_ai['name']} 回复...")
 
-            arb_reply, err = await self._send_to(arb_ai, pages, arb_prompt, progress_callback)
+            # 军师发言：第一轮用文字发送话题，后续轮用txt文件发送（避免文字过长导致AI平台罢工）
+            arb_force_file = (round_count > 0)
+            arb_reply, err = await self._send_to(arb_ai, pages, arb_prompt, progress_callback,
+                                                  force_file_upload=arb_force_file)
             if err is not None:
                 if progress_callback:
                     progress_callback("error", arb_ai["name"], str(err))
@@ -740,10 +745,11 @@ class HostedMode:
                     progress_callback("status", "系统", f"第 {round_count + 1} 轮：{ai_names} 正在并行回复...")
                     progress_callback("waiting", "系统", f"等待 {ai_names} 回复...")
 
-                # 并行发送+等待
+                # 并行发送+等待（谋士始终用txt文件接收内容，避免文字过长导致AI平台罢工）
                 async def _send_and_receive(ai: dict) -> tuple:
                     try:
-                        reply, err = await self._send_to(ai, pages, ai_prompts[ai["name"]], progress_callback)
+                        reply, err = await self._send_to(ai, pages, ai_prompts[ai["name"]], progress_callback,
+                                                          force_file_upload=True)
                         return (ai, reply, err)
                     except Exception as e:
                         return (ai, None, e)
@@ -1019,7 +1025,10 @@ class HostedMode:
                 round_status = f"第{round_count + 1}轮 | 💬 {arb_ai['name']} 正在发言 | 已发言{len(spoken)}({','.join(spoken) if spoken else '无'}) 未发言{len(unspoken)}({','.join(unspoken) if unspoken else '无'})"
                 progress_callback("round_status", "系统", round_status)
 
-            arb_reply, err = await self._send_to(arb_ai, pages, arb_prompt, progress_callback)
+            # 军师发言：第一轮用文字发送，后续轮用txt文件（避免文字过长导致AI平台罢工）
+            arb_force_file = (round_count > 0)
+            arb_reply, err = await self._send_to(arb_ai, pages, arb_prompt, progress_callback,
+                                                  force_file_upload=arb_force_file)
             if err is not None:
                 if progress_callback:
                     progress_callback("error", arb_ai["name"], str(err))
@@ -1092,7 +1101,8 @@ class HostedMode:
 
                 async def _send_and_receive_cont(ai: dict) -> tuple:
                     try:
-                        reply, err = await self._send_to(ai, pages, ai_prompts[ai["name"]], progress_callback)
+                        reply, err = await self._send_to(ai, pages, ai_prompts[ai["name"]], progress_callback,
+                                                          force_file_upload=True)
                         return (ai, reply, err)
                     except Exception as e:
                         return (ai, None, e)

@@ -962,7 +962,8 @@ class ChromeManager:
 
     async def send_and_wait(self, page: Page, message: str,
                             ai_config: dict, timeout: int = 300,
-                            fast_wait: bool = False) -> str:
+                            fast_wait: bool = False,
+                            force_file_upload: bool = False) -> str:
         """
         发送消息并等待 AI 回复完成，提取最新回复纯文本。
 
@@ -980,6 +981,7 @@ class ChromeManager:
             ai_config: AI 平台配置（含 selectors）
             timeout: 单轮最大等待秒数
             fast_wait: 是否使用快速等待模式
+            force_file_upload: 是否强制使用文件上传方式发送消息（避免文字过长导致AI平台罢工）
 
         Returns:
             str: AI 回复的纯文本
@@ -1030,11 +1032,15 @@ class ChromeManager:
             log_info(f"[{ai_name}] 发送前状态: 回复区块={reply_count_before}, 内容长度={content_len_before}")
 
             # 1. 定位输入框并填充（带重试，粘贴文件后页面可能重渲染）
-            # 检查消息长度，超过50000字时自动转为文件上传
+            # 检查消息长度，超过50000字或 force_file_upload=True 时自动转为文件上传
             MAX_INLINE_LENGTH = 50000
-            if len(message) > MAX_INLINE_LENGTH:
+            need_file_upload = force_file_upload or len(message) > MAX_INLINE_LENGTH
+            if need_file_upload:
                 import time as _time_for_file
-                log_info(f"[{ai_name}] 消息过长（{len(message)}字 > {MAX_INLINE_LENGTH}字），转为文件上传...")
+                if force_file_upload:
+                    log_info(f"[{ai_name}] 强制文件上传模式（避免文字过长导致AI平台罢工）")
+                else:
+                    log_info(f"[{ai_name}] 消息过长（{len(message)}字 > {MAX_INLINE_LENGTH}字），转为文件上传...")
                 import os
                 # 创建临时txt文件
                 tmp_dir = os.path.expanduser("~/.polysage/temp")
