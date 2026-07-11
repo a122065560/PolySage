@@ -707,6 +707,20 @@ class HostedMode:
                 # 通知后清除，避免重复通知
                 self._removed_this_round.clear()
 
+            # 最终轮强制结案通知：达到最大轮数-1时，告知军师本轮为最终轮，必须结案
+            is_final_round = (round_count + 1 >= self.max_rounds)
+            if is_final_round:
+                final_notice = (
+                    f"【系统通知】\n"
+                    f"  - ⚠️ 已达到讨论最大轮数（{self.max_rounds}轮），本轮为最终轮。\n"
+                    f"    请你在本轮发言中直接写出完整的结构化最终方案，并在最后一行加上 {self.arbitration_signal}。\n"
+                    f"    不要再等待其他谋士的回复，必须本轮结案。\n"
+                )
+                system_notice = (system_notice + final_notice) if system_notice else final_notice
+                if progress_callback:
+                    progress_callback("status", "系统",
+                        f"⚠️ 第{round_count + 1}轮为最终轮（已达最大{self.max_rounds}轮），军师将强制结案")
+
             if not prev_round_replies:
                 # 第一轮：军师收到话题，发表初始分析
                 arb_prompt = (
@@ -1099,6 +1113,20 @@ class HostedMode:
                 removal_lines = [f"  - {name}：{reason}" for name, reason in self._removed_this_round.items()]
                 system_notice = "【系统通知】\n以下AI已被移出议事厅，不再参与讨论，无需等待他们的回复：\n" + "\n".join(removal_lines) + "\n"
                 self._removed_this_round.clear()
+
+            # 最终轮强制结案通知：达到最大轮数-1时，告知军师本轮为最终轮，必须结案
+            is_final_round = (round_count + 1 >= self.max_rounds)
+            if is_final_round:
+                final_notice = (
+                    f"【系统通知】\n"
+                    f"  - ⚠️ 已达到讨论最大轮数（{self.max_rounds}轮），本轮为最终轮。\n"
+                    f"    请你在本轮发言中直接写出完整的结构化最终方案，并在最后一行加上 {self.arbitration_signal}。\n"
+                    f"    不要再等待其他谋士的回复，必须本轮结案。\n"
+                )
+                system_notice = (system_notice + final_notice) if system_notice else final_notice
+                if progress_callback:
+                    progress_callback("status", "系统",
+                        f"⚠️ 第{round_count + 1}轮为最终轮（已达最大{self.max_rounds}轮），军师将强制结案")
 
             if round_count == 0:
                 # 第一轮追问：军师收到用户消息
