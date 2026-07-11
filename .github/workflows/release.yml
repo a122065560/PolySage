@@ -51,14 +51,14 @@ jobs:
         working-directory: app
         env:
           GITHUB_ACTIONS: 'true'
-          DMG_NAME: 聚慧-${{ env.VERSION }}-arm64.dmg
+          DMG_NAME: PolySage-${{ env.VERSION }}-arm64.dmg
         run: bash build_dmg.sh
 
       - name: 上传 macOS DMG
         uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
-          path: build/聚慧-${{ env.VERSION }}-arm64.dmg
+          path: build/PolySage-${{ env.VERSION }}-arm64.dmg
           retention-days: 30
 
   # ============================================================
@@ -99,11 +99,11 @@ jobs:
       - name: 生成 Windows 安装包
         run: iscc /DMyAppVersion=${{ env.VERSION }} common/installer.iss
 
-      - name: 重命名为中文名
+      - name: 移动到根目录
         shell: bash
         run: |
-          mv "common/PolySage-${{ env.VERSION }}-Windows.exe" "聚慧-${{ env.VERSION }}-Windows.exe"
-          ls -la "聚慧-${{ env.VERSION }}-Windows.exe"
+          mv "common/PolySage-${{ env.VERSION }}-Windows.exe" .
+          ls -la "PolySage-${{ env.VERSION }}-Windows.exe"
 
       - name: 代码签名
         if: ${{ env.CERTIFICATE_BASE64 != '' }}
@@ -117,13 +117,13 @@ jobs:
             Sort-Object FullName -Descending | Select-Object -First 1
           & $signtool.FullName sign /f cert.pfx /p $env:CERT_PASSWORD `
             /fd sha256 /tr http://timestamp.digicert.com /td sha256 `
-            "聚慧-${{ env.VERSION }}-Windows.exe"
+            "PolySage-${{ env.VERSION }}-Windows.exe"
 
       - name: 上传 Windows 安装包
         uses: actions/upload-artifact@v4
         with:
           name: windows-exe
-          path: 聚慧-${{ env.VERSION }}-Windows.exe
+          path: PolySage-${{ env.VERSION }}-Windows.exe
           retention-days: 30
 
   # ============================================================
@@ -147,7 +147,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION }}
-          name: ${{ env.VERSION }}
+          name: 聚慧 PolySage ${{ env.VERSION }} 正式版
           files: |
             artifacts/macos-dmg/*.dmg
             artifacts/windows-exe/*.exe
