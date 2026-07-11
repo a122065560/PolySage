@@ -562,6 +562,9 @@ class ChromeManager:
         """在内置浏览器模式下，异步关闭 Playwright context 和 browser。
         必须在事件循环线程中调用（如大脑线程的 asyncio 循环）。
         """
+        # 0. 清除文件上传缓存（浏览器关闭后页面引用全部失效）
+        self._uploaded_pages = set()
+
         # 1. 关闭 context（会关闭所有页面）
         if self._context is not None:
             try:

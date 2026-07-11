@@ -563,12 +563,19 @@ class WorkerThread(QThread):
         self.submit(self._async_stop_chrome_full())
 
     async def _async_stop_chrome_full(self):
-        """在工作线程中完成所有关闭操作：停止讨论 → 销毁AIWorker → 关闭Chrome → 通知UI。"""
+        """在工作线程中完成所有关闭操作：停止讨论 → 清除讨论状态 → 销毁AIWorker → 关闭Chrome → 通知UI。"""
         try:
             # 1. 停止讨论
             if self._hosted:
                 self._hosted._stop_requested = True
                 self._hosted._is_running = False
+
+            # 1b. 清除讨论状态（关闭浏览器后重新打开应从第一轮开始，不应进入追问模式）
+            if self._hosted:
+                self._hosted._last_ai_list = None
+                self._hosted._last_pages = None
+                self._hosted._last_history = None
+                log_info("浏览器关闭：已清除讨论状态，下次启动将从第一轮开始")
 
             # 2. 销毁所有 AIWorker
             for name in list(self._ai_workers.keys()):
