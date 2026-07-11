@@ -154,7 +154,7 @@ class HostedMode:
                               ai_disabled: set) -> str:
         """
         构建紧凑状态栏文本。
-        格式：【第3轮】---【DeepSeek(✓)通义千问(?)minimax(...)kimi(✕)智谱清言(?)】
+        格式：【第3轮】---【DeepSeek(✓)】【通义千问(?)】【minimax(...)】【kimi(✕)】【智谱清言(?)】
         ?=还未发言 ...=当前正在回复 ✓=成功回复 ✕=回复失败
         """
         # current_speaker 可能是逗号分隔的多个AI名
@@ -165,14 +165,14 @@ class HostedMode:
             if name in ai_disabled or name in self._removed_ais:
                 continue
             if name in speaking_set:
-                parts.append(f"{name}(...)")
+                parts.append(f"【{name}(...)】")
             elif name in failed:
-                parts.append(f"{name}(✕)")
+                parts.append(f"【{name}(✕)】")
             elif name in spoken:
-                parts.append(f"{name}(✓)")
+                parts.append(f"【{name}(✓)】")
             else:
-                parts.append(f"{name}(?)")
-        return f"【第{round_num}轮】---【{''.join(parts)}】"
+                parts.append(f"【{name}(?)】")
+        return f"【第{round_num}轮】---{''.join(parts)}"
 
     def is_running(self) -> bool:
         """讨论是否正在进行。"""

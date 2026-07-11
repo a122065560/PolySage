@@ -1879,10 +1879,11 @@ class HostedModeTab(QWidget):
         self.chat_stream = ChatStream()
         layout.addWidget(self.chat_stream, stretch=1)
 
-        # 即时状态提示栏（输入框上方）
+        # 即时状态提示栏（输入框上方）— 支持富文本+动画
         self.status_bar = QLabel("")
         self.status_bar.setObjectName("instant_status")
-        self.status_bar.setWordWrap(True)
+        self.status_bar.setWordWrap(False)
+        self.status_bar.setTextFormat(Qt.TextFormat.RichText)
         self.status_bar.setStyleSheet("""
             QLabel#instant_status {
                 background-color: #F0F4FF;
@@ -1895,6 +1896,13 @@ class HostedModeTab(QWidget):
             }
         """)
         layout.addWidget(self.status_bar)
+
+        # 动画状态数据
+        self._status_text = ""          # 原始文本
+        self._dot_count = 0             # 动画点数
+        self._status_timer = QTimer(self)
+        self._status_timer.setInterval(400)  # 400ms 刷新一次
+        self._status_timer.timeout.connect(self._update_animated_status)
 
         # 底部输入区（聊天室风格：输入框 + 发送按钮）
         input_layout = QHBoxLayout()
@@ -1917,12 +1925,72 @@ class HostedModeTab(QWidget):
         layout.addLayout(input_layout)
 
     def _set_status(self, text: str):
-        """更新即时状态栏。"""
-        self.status_bar.setText(text)
+        """更新即时状态栏（支持动画省略号）。"""
+        self._status_text = text
+        # 检测是否包含正在回复的AI（含(...)标记）
+        if "(...)" in text:
+            if not self._status_timer.isActive():
+                self._dot_count = 0
+                self._status_timer.start()
+            self._update_animated_status()
+        else:
+            self._status_timer.stop()
+            self._render_status_html(text, 3)
 
     def _clear_status(self):
         """清空即时状态栏。"""
+        self._status_timer.stop()
+        self._status_text = ""
         self.status_bar.setText("")
+
+    def _update_animated_status(self):
+        """QTimer回调：刷新动画省略号。"""
+        self._dot_count = (self._dot_count % 3) + 1  # 1→2→3→1...
+        self._render_status_html(self._status_text, self._dot_count)
+
+    def _render_status_html(self, text: str, dot_count: int):
+        """将状态文本渲染为带颜色的HTML。"""
+        import re
+        if not text:
+            self.status_bar.setText("")
+            return
+
+        # 动态省略号
+        dots = "." * dot_count
+
+        # 替换各状态标记为带颜色的HTML span
+        # 格式: 【第n轮】---【AI(✓)】【AI(?)】【AI(...)】【AI(✕)】
+        result = text
+
+        # 先替换正在回复的 AI(name(...)) → 橙色动态点
+        def replace_speaking(match):
+            name = match.group(1)
+            return f'<span style="color:#FF6B00;">【{name}({dots})】</span>'
+
+        result = re.sub(r'【(.+?)\(\.\.\.\)】', replace_speaking, result)
+
+        # 替换已回复 AI(name(✓)) → 绿色
+        def replace_spoken(match):
+            name = match.group(1)
+            return f'<span style="color:#16A34A;">【{name}(✓)】</span>'
+
+        result = re.sub(r'【(.+?)\(✓\)】', replace_spoken, result)
+
+        # 替换失败 AI(name(✕)) → 红色
+        def replace_failed(match):
+            name = match.group(1)
+            return f'<span style="color:#DC2626;">【{name}(✕)】</span>'
+
+        result = re.sub(r'【(.+?)\(✕\)】', replace_failed, result)
+
+        # 替换等待中 AI(name(?)) → 黄色
+        def replace_waiting(match):
+            name = match.group(1)
+            return f'<span style="color:#D97706;">【{name}(?)】</span>'
+
+        result = re.sub(r'【(.+?)\(\?\)】', replace_waiting, result)
+
+        self.status_bar.setText(result)
 
     def _on_send(self):
         """统一发送：讨论未开始时启动讨论，进行中时主公密令，结束后追问。"""
