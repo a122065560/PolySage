@@ -1958,9 +1958,10 @@ class HostedModeTab(QWidget):
             self.status_bar.setText("")
             return
 
-        # 动态省略号，用空格补齐到3字符宽度: "." → ".  ", ".." → ".. ", "..." → "..."
+        # 动态省略号，用&nbsp;补齐到3字符宽度
+        # HTML会折叠普通空格，必须用&nbsp;才能保持宽度一致
         dots_raw = "." * dot_count
-        dots = dots_raw + " " * (3 - dot_count)
+        dots = dots_raw + "&nbsp;" * (3 - dot_count)
 
         result = text
 
