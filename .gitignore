@@ -46,6 +46,9 @@ build/*.dmg
 build/*.exe
 build/*.msi
 build/聚慧.app
+# 项目根目录下的 .app（构建意外输出到根目录时忽略）
+/聚慧.app
+/聚慧-*.dmg
 
 # 临时文件
 tmp/

@@ -20,12 +20,14 @@ echo ""
 # 变量
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+OUTPUT_DIR="$PROJECT_DIR/build"
 cd "$SCRIPT_DIR"
 
 DIST_DIR="$SCRIPT_DIR/dist"
 BUILD_DIR="$SCRIPT_DIR/build"
-OUTPUT_DIR="$PROJECT_DIR"
 DMG_NAME="${DMG_NAME:-聚慧-v1.0.0-arm64.dmg}"
+
+mkdir -p "$OUTPUT_DIR"
 
 # ----------------------------------------------------------------
 # Step 1: 检查依赖
@@ -369,11 +371,11 @@ echo -e "  App:  $OUTPUT_DIR/聚慧.app"
 echo -e "  DMG:  $DMG_PATH"
 echo ""
 
-# 复制 .app 到项目根目录（与 app/ 同级）
+# 复制 .app 到 build/ 目录
 if [ -d "$DIST_DIR/聚慧.app" ]; then
     rm -rf "$OUTPUT_DIR/聚慧.app"
     cp -R "$DIST_DIR/聚慧.app" "$OUTPUT_DIR/聚慧.app"
-    echo -e "${GREEN}  ✅ .app 已复制到项目根目录${NC}"
+    echo -e "${GREEN}  ✅ .app 已复制到 build/ 目录${NC}"
 fi
 
 APP_SIZE=$(du -sh "$DIST_DIR/聚慧.app" 2>/dev/null | cut -f1)
@@ -438,14 +440,14 @@ if git rev-parse --git-dir > /dev/null 2>&1; then
                     if [ "$RUN_STATUS" = "success" ]; then
                         echo -e "${GREEN}  ✅ Windows 构建成功！正在下载 .exe...${NC}"
                         
-                        # 下载 Windows 产物
-                        gh run download "$RUN_ID" -n windows-exe -D "$OUTPUT_DIR/windows" 2>/dev/null || true
+                        # 下载 Windows 产物到 build/ 目录
+                        gh run download "$RUN_ID" -n windows-exe -D "$OUTPUT_DIR" 2>/dev/null || true
                         
                         # 查找下载的 .exe
-                        EXE_FILE=$(find "$OUTPUT_DIR/windows" -name "*.exe" -type f 2>/dev/null | head -1)
+                        EXE_FILE=$(find "$OUTPUT_DIR" -maxdepth 1 -name "*.exe" -type f 2>/dev/null | head -1)
                         if [ -n "$EXE_FILE" ]; then
                             EXE_SIZE=$(du -sh "$EXE_FILE" 2>/dev/null | cut -f1)
-                            echo -e "${GREEN}  ✅ Windows .exe 已下载${NC}"
+                            echo -e "${GREEN}  ✅ Windows .exe 已下载到 build/${NC}"
                             echo -e "  EXE: $EXE_FILE ($EXE_SIZE)"
                         else
                             echo -e "${YELLOW}  ⚠️  产物下载完成但未找到 .exe 文件${NC}"
@@ -482,10 +484,10 @@ fi  # 结束 GITHUB_ACTIONS 判断
 echo ""
 
 # ----------------------------------------------------------------
-# Step 9: 清理中间构建文件
+# Step 9: 清理中间构建文件（只清理 app/build 和 app/dist，不删 build/）
 # ----------------------------------------------------------------
 echo -e "${YELLOW}[清理] 删除中间构建文件...${NC}"
-rm -rf "$BUILD_DIR"
-rm -rf "$DIST_DIR"
-echo -e "${GREEN}  ✅ build/ 和 dist/ 已清理${NC}"
+rm -rf "$SCRIPT_DIR/build"
+rm -rf "$SCRIPT_DIR/dist"
+echo -e "${GREEN}  ✅ app/build/ 和 app/dist/ 已清理${NC}"
 echo ""

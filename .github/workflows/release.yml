@@ -5,7 +5,7 @@
 #   1. 手动触发 (workflow_dispatch) —— 输入版本号
 #   2. 推送 v* 标签自动触发
 # 构建平台：macOS (ARM64) + Windows (x64)
-# 产物：PolySage-{version}-macOS.dmg / PolySage-{version}-Windows.exe
+# 产物：聚慧-{version}-arm64.dmg / 聚慧-{version}-Windows.exe
 # ============================================================
 name: 发布构建
 
@@ -51,14 +51,14 @@ jobs:
         working-directory: app
         env:
           GITHUB_ACTIONS: 'true'
-          DMG_NAME: PolySage-${{ env.VERSION }}-macOS.dmg
+          DMG_NAME: 聚慧-${{ env.VERSION }}-arm64.dmg
         run: bash build_dmg.sh
 
       - name: 上传 macOS DMG
         uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
-          path: app/dist/PolySage-${{ env.VERSION }}-macOS.dmg
+          path: build/聚慧-${{ env.VERSION }}-arm64.dmg
           retention-days: 30
 
   # ============================================================
@@ -111,13 +111,13 @@ jobs:
             Sort-Object FullName -Descending | Select-Object -First 1
           & $signtool.FullName sign /f cert.pfx /p $env:CERT_PASSWORD `
             /fd sha256 /tr http://timestamp.digicert.com /td sha256 `
-            "PolySage-${{ env.VERSION }}-Windows.exe"
+            "聚慧-${{ env.VERSION }}-Windows.exe"
 
       - name: 上传 Windows 安装包
         uses: actions/upload-artifact@v4
         with:
           name: windows-exe
-          path: PolySage-${{ env.VERSION }}-Windows.exe
+          path: 聚慧-${{ env.VERSION }}-Windows.exe
           retention-days: 30
 
   # ============================================================
