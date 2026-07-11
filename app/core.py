@@ -580,7 +580,7 @@ class HostedMode:
         log_info("Phase 0+1 完成: 所有 AI 已并行收到文件和开场白")
         if progress_callback:
             progress_callback("status", "系统", "所有 AI 已就绪，开始正式讨论...")
-            progress_callback("round_marker", "系统", "━━ 第1轮讨论开始 ━━")
+            progress_callback("round_marker", "系统", "▽━━ 第1轮讨论开始 ━━▽")
             progress_callback("discussion_start", "系统", "")  # 通知UI开始编号
 
         # ==============================================================
@@ -969,7 +969,7 @@ class HostedMode:
 
             # 对话框：轮次结束标记
             if progress_callback:
-                progress_callback("round_marker", "系统", f"━━ 第{current_round}轮讨论结束 ━━")
+                progress_callback("round_marker", "系统", f"▲━━ 第{current_round}轮讨论结束 ━━▲")
 
             if len(round_replies) < 2:
                 # 只有军师回复，没有谋士回复
@@ -987,7 +987,7 @@ class HostedMode:
             round_count += 1
             # 对话框：下一轮开始标记
             if progress_callback and round_count < self.max_rounds:
-                progress_callback("round_marker", "系统", f"━━ 第{round_count + 1}轮讨论开始 ━━")
+                progress_callback("round_marker", "系统", f"▽━━ 第{round_count + 1}轮讨论开始 ━━▽")
 
         # 达到最大轮数，强制军师结案
         if self.arbitrator and self.arbitrator != "auto":
@@ -1399,7 +1399,7 @@ class HostedMode:
 
             # 对话框：轮次结束标记
             if progress_callback:
-                progress_callback("round_marker", "系统", f"━━ 第{current_round}轮讨论结束 ━━")
+                progress_callback("round_marker", "系统", f"▲━━ 第{current_round}轮讨论结束 ━━▲")
 
             if len(round_replies) < 2:
                 consecutive_failures += 1
@@ -1412,7 +1412,7 @@ class HostedMode:
             round_count += 1
             # 对话框：下一轮开始标记
             if progress_callback and round_count < self.max_rounds:
-                progress_callback("round_marker", "系统", f"━━ 第{round_count + 1}轮讨论开始 ━━")
+                progress_callback("round_marker", "系统", f"▽━━ 第{round_count + 1}轮讨论开始 ━━▽")
 
         if self.arbitrator and self.arbitrator != "auto":
             if progress_callback:
