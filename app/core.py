@@ -771,26 +771,14 @@ class HostedMode:
 
             # 短回复重复检测（军师也适用）
             if self._check_short_reply(arb_ai["name"], arb_reply, ai_short_replies, ai_disabled, progress_callback):
-                # 军师被剔除，需要转移军师头衔
+                # 军师被剔除，直接停止讨论（不好中途换帅）
                 if progress_callback:
                     progress_callback("status", "系统",
-                        f"⚠️ 军师 {arb_ai['name']} 短回复重复，已自动剔除")
-                # 找一个未被剔除的AI作为新军师
-                remaining = [a for a in ai_list if a["name"] not in ai_disabled and a["name"] not in self._removed_ais]
-                if remaining:
-                    arb_ai = remaining[0]
-                    self.arbitrator = arb_ai["name"]
-                    if progress_callback:
-                        progress_callback("status", "系统",
-                            f"⚖️ 军师头衔转给 {arb_ai['name']}")
-                    log_info(f"军师转移(短回复): {self._removed_this_round.get('prev_arb', '')} → {arb_ai['name']}")
-                    continue
-                else:
-                    if progress_callback:
-                        progress_callback("status", "系统", "⚠️ 所有AI均被剔除，讨论终止")
-                    self._is_running = False
-                    return {"history": history, "final_result": None,
-                            "ended_by": "所有AI均被剔除", "rounds": round_count}
+                        f"🛑 军师 {arb_ai['name']} 短回复重复被剔除，讨论直接停止（不好中途换帅）")
+                self._is_running = False
+                return {"history": history, "final_result": None,
+                        "ended_by": f"军师 {arb_ai['name']} 短回复重复被剔除，讨论停止",
+                        "rounds": round_count}
 
             # 检查军师是否结案
             ended, result = await self._check_end(
@@ -884,26 +872,17 @@ class HostedMode:
                                     progress_callback("status", "系统",
                                         f"🚫 {ai_name} 连续 {fail_count} 次超时/失败，已自动剔除议事厅")
                                 log_warning(f"[{ai_name}] 连续失败 {fail_count} 次，已自动剔除")
-                                # Bug6: 如果被剔除的是军师，将军师头衔转给其他活跃AI，若无可用AI则终止讨论
+                                # Bug6: 如果被剔除的是军师，直接停止讨论（不好中途换帅）
                                 if ai_name == self.arbitrator:
-                                    remaining = [a for a in ai_list if a["name"] not in ai_disabled and a["name"] not in self._removed_ais]
-                                    if remaining:
-                                        new_arb = remaining[0]["name"]
-                                        self.arbitrator = new_arb
-                                        if progress_callback:
-                                            progress_callback("status", "系统",
-                                                f"⚖️ 军师 {ai_name} 被剔除，军师头衔转给 {new_arb}")
-                                        log_info(f"军师转移: {ai_name} → {new_arb}")
-                                    else:
-                                        if progress_callback:
-                                            progress_callback("status", "系统",
-                                                f"⚠️ 军师 {ai_name} 被剔除且无其他可用AI，讨论终止")
-                                        self._is_running = False
-                                        return {
-                                            "history": history, "final_result": None,
-                                            "ended_by": f"军师 {ai_name} 被剔除且无其他可用AI，讨论终止",
-                                            "rounds": round_count,
-                                        }
+                                    if progress_callback:
+                                        progress_callback("status", "系统",
+                                            f"🛑 军师 {ai_name} 超时被剔除，讨论直接停止（不好中途换帅）")
+                                    self._is_running = False
+                                    return {
+                                        "history": history, "final_result": None,
+                                        "ended_by": f"军师 {ai_name} 超时被剔除，讨论停止",
+                                        "rounds": round_count,
+                                    }
                             elif progress_callback:
                                 progress_callback("error", ai["name"], str(err))
                             continue
@@ -1178,24 +1157,14 @@ class HostedMode:
 
             # 短回复重复检测（军师也适用）
             if self._check_short_reply(arb_ai["name"], arb_reply, ai_short_replies, ai_disabled, progress_callback):
+                # 军师被剔除，直接停止讨论（不好中途换帅）
                 if progress_callback:
                     progress_callback("status", "系统",
-                        f"⚠️ 军师 {arb_ai['name']} 短回复重复，已自动剔除")
-                remaining = [a for a in ai_list if a["name"] not in ai_disabled and a["name"] not in self._removed_ais]
-                if remaining:
-                    arb_ai = remaining[0]
-                    self.arbitrator = arb_ai["name"]
-                    if progress_callback:
-                        progress_callback("status", "系统",
-                            f"⚖️ 军师头衔转给 {arb_ai['name']}")
-                    log_info(f"军师转移(短回复): → {arb_ai['name']}")
-                    continue
-                else:
-                    if progress_callback:
-                        progress_callback("status", "系统", "⚠️ 所有AI均被剔除，讨论终止")
-                    self._is_running = False
-                    return {"history": history, "final_result": None,
-                            "ended_by": "所有AI均被剔除", "rounds": round_count}
+                        f"🛑 军师 {arb_ai['name']} 短回复重复被剔除，讨论直接停止（不好中途换帅）")
+                self._is_running = False
+                return {"history": history, "final_result": None,
+                        "ended_by": f"军师 {arb_ai['name']} 短回复重复被剔除，讨论停止",
+                        "rounds": round_count}
 
             ended, result = await self._check_end(
                 arb_reply, arb_ai, history, done_set, done_state,
@@ -1281,26 +1250,17 @@ class HostedMode:
                                     progress_callback("status", "系统",
                                         f"🚫 {ai_name} 连续 {fail_count} 次超时/失败，已自动剔除议事厅")
                                 log_warning(f"[{ai_name}] 连续失败 {fail_count} 次，已自动剔除")
-                                # Bug6: 军师被剔除时的处理
+                                # Bug6: 如果被剔除的是军师，直接停止讨论（不好中途换帅）
                                 if ai_name == self.arbitrator:
-                                    remaining = [a for a in ai_list if a["name"] not in ai_disabled and a["name"] not in self._removed_ais]
-                                    if remaining:
-                                        new_arb = remaining[0]["name"]
-                                        self.arbitrator = new_arb
-                                        if progress_callback:
-                                            progress_callback("status", "系统",
-                                                f"⚖️ 军师 {ai_name} 被剔除，军师头衔转给 {new_arb}")
-                                        log_info(f"军师转移: {ai_name} → {new_arb}")
-                                    else:
-                                        if progress_callback:
-                                            progress_callback("status", "系统",
-                                                f"⚠️ 军师 {ai_name} 被剔除且无其他可用AI，讨论终止")
-                                        self._is_running = False
-                                        return {
-                                            "history": history, "final_result": None,
-                                            "ended_by": f"军师 {ai_name} 被剔除且无其他可用AI，讨论终止",
-                                            "rounds": round_count,
-                                        }
+                                    if progress_callback:
+                                        progress_callback("status", "系统",
+                                            f"🛑 军师 {ai_name} 超时被剔除，讨论直接停止（不好中途换帅）")
+                                    self._is_running = False
+                                    return {
+                                        "history": history, "final_result": None,
+                                        "ended_by": f"军师 {ai_name} 超时被剔除，讨论停止",
+                                        "rounds": round_count,
+                                    }
                             elif progress_callback:
                                 progress_callback("error", ai["name"], str(err))
                             continue
