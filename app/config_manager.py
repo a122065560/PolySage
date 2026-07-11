@@ -210,6 +210,43 @@ DEFAULT_CONFIG = {
                 ],
             },
         },
+        {
+            "name": "豆包",
+            "url": "https://www.doubao.com/chat/",
+            "enabled": True,
+            "is_arbitrator": False,
+            "selectors": {
+                "input_textarea": "textarea.semi-input-textarea, textarea",
+                "send_button": "div.send-btn-wrapper button[type='submit'], button[type='submit']",
+                "send_button_selectors": [
+                    "div.send-btn-wrapper button[type='submit']",
+                    "button[type='submit']",
+                    "div[class*='send-btn-wrapper'] button",
+                    "div[class*='send'] button",
+                ],
+                "stop_button": "button:has-text('停止'), div[class*='stop']",
+                "response_container": "div[class*='message'], div[class*='conversation'], div[class*='bubble'], div[class*='answer'], div[class*='response']",
+                "last_response": "div[class*='markdown']:not([class*='think']):not([class*='reasoning']):last-of-type, div[class*='message-content']:not([class*='think']):last-of-type, div[class*='bubble']:not([class*='think']):last-of-type, div[class*='prose']:not([class*='think']):last-of-type",
+                "logged_in_selector": "div[class*='avatar'], img[class*='avatar'], button[class*='avatar']",
+                "logged_out_selector": "button:has-text('登录'), button.login-btn-header-CTKsn1",
+                "auth_storage_keys": ["sessionid", "uid", "sid_tt", "uid_tt", "passport_csrf_token", "samantha_web_web_id"],
+            },
+            "thinking_mode": {
+                "enabled": True,
+                "detect": {
+                    "type": "toggle",
+                    "selector": "button:has-text('深度思考'), div[class*='think']:has-text('深度思考')",
+                    "label_text": "深度思考",
+                    "active_attr": "aria-pressed",
+                    "active_value": "true",
+                },
+                "enable_steps": [
+                    {"action": "click_text", "text": "深度思考",
+                     "selector": "button, div[class*='think'], div[class*='mode'], div[class*='toggle']"},
+                    {"action": "wait", "ms": 800},
+                ],
+            },
+        },
     ],
     "selected_ais": [],
 }
@@ -460,7 +497,7 @@ class ConfigManager:
         - 用户手动添加的自定义平台：永远不覆盖
         """
         # 所有默认平台都自动启用
-        default_names = {"DeepSeek", "智谱清言", "通义千问", "MiniMax", "Kimi"}
+        default_names = {"DeepSeek", "智谱清言", "通义千问", "MiniMax", "Kimi", "豆包"}
         # 从 DEFAULT_CONFIG 获取最新配置（含选择器和思考模式）
         default_platforms = {p["name"]: p for p in DEFAULT_CONFIG.get("ai_platforms", [])}
         platforms = self.config.get("ai_platforms", [])

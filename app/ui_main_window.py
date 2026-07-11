@@ -892,7 +892,7 @@ class SettingsDialog(QDialog):
 
     def _on_delete_platform(self):
         """删除平台（内置5个AI不允许删除）。"""
-        BUILTIN_AIS = {"DeepSeek", "智谱清言", "通义千问", "MiniMax", "Kimi"}
+        BUILTIN_AIS = {"DeepSeek", "智谱清言", "通义千问", "MiniMax", "Kimi", "豆包"}
         row = self._get_selected_platform_row()
         platforms = self.config_mgr.get_ai_platforms()
         if row < 0 or row >= len(platforms):
@@ -910,7 +910,7 @@ class SettingsDialog(QDialog):
 
     def _delete_platform_at(self, idx):
         """删除指定索引的平台（行尾×按钮调用）。"""
-        BUILTIN_AIS = {"DeepSeek", "智谱清言", "通义千问", "MiniMax", "Kimi"}
+        BUILTIN_AIS = {"DeepSeek", "智谱清言", "通义千问", "MiniMax", "Kimi", "豆包"}
         platforms = self.config_mgr.get_ai_platforms()
         if idx < 0 or idx >= len(platforms):
             return
@@ -981,14 +981,14 @@ class SettingsDialog(QDialog):
         reply = QMessageBox.question(
             self, "恢复默认",
             "确定要将 AI 平台恢复为默认配置吗？\n\n"
-            "• 内置平台（DeepSeek、智谱清言、通义千问、MiniMax、Kimi）将恢复默认选择器\n"
+            "• 内置平台（DeepSeek、智谱清言、通义千问、MiniMax、Kimi、豆包）将恢复默认选择器\n"
             "• 你手动添加的自定义平台不受影响"
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
         import copy
         from config_manager import DEFAULT_CONFIG, DEFAULT_CONFIG_VERSION
-        default_names = {"DeepSeek", "智谱清言", "通义千问", "MiniMax", "Kimi"}
+        default_names = {"DeepSeek", "智谱清言", "通义千问", "MiniMax", "Kimi", "豆包"}
         user_custom_platforms = [
             dict(p) for p in self.config_mgr.config.get("ai_platforms", [])
             if p.get("name") not in default_names
@@ -1063,13 +1063,13 @@ class SettingsDialog(QDialog):
         """恢复所有默认配置（包括 AI 平台、讨论参数、LM Studio 等）。
 
         策略：
-        - 默认平台（DeepSeek/智谱清言/通义千问/MiniMax/Kimi）：恢复为代码中的最新配置
+        - 默认平台（DeepSeek/智谱清言/通义千问/MiniMax/Kimi/豆包）：恢复为代码中的最新配置
         - 用户手动添加的自定义平台：保留不动
         - 讨论参数、开场白、LM Studio：恢复默认
         - config_version：重置为 DEFAULT_CONFIG_VERSION
         """
         # 先识别用户自定义平台（不在默认平台名列表中的）
-        default_names = {"DeepSeek", "智谱清言", "通义千问", "MiniMax", "Kimi"}
+        default_names = {"DeepSeek", "智谱清言", "通义千问", "MiniMax", "Kimi", "豆包"}
         user_custom_platforms = [
             dict(p) for p in self.config_mgr.config.get("ai_platforms", [])
             if p.get("name") not in default_names
@@ -1085,7 +1085,7 @@ class SettingsDialog(QDialog):
             self, "恢复所有默认",
             "确定要恢复所有默认配置吗？\n\n"
             "这将重置：\n"
-            "• AI 平台（恢复 DeepSeek、智谱清言、通义千问、MiniMax、Kimi 的默认选择器）\n"
+            "• AI 平台（恢复 DeepSeek、智谱清言、通义千问、MiniMax、Kimi、豆包 的默认选择器）\n"
             "• 讨论参数（轮数、超时、结束标记、结案方）\n"
             "• 开场白\n"
             "• LM Studio 配置\n\n"
