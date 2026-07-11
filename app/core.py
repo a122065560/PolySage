@@ -76,6 +76,8 @@ class HostedMode:
         self._stop_requested = False
         # 被用户剔除的AI（讨论中途移出议事厅），不再发送/重建页面
         self._removed_ais: set = set()
+        # 本轮被剔除的AI及原因 {name: reason}，用于通知军师
+        self._removed_this_round: dict = {}
         # 追问模式引用（run 结束后保存，供 continue_discussion 使用）
         self._last_ai_list: Optional[list] = None
         self._last_pages: Optional[dict] = None
@@ -99,10 +101,11 @@ class HostedMode:
         self._stop_requested = True
         log_info("用户请求停止讨论")
 
-    def mark_ai_removed(self, name: str):
+    def mark_ai_removed(self, name: str, reason: str = "用户手动剔除"):
         """标记AI被用户剔除（讨论中途移出议事厅），不再发送/重建页面。"""
         self._removed_ais.add(name)
-        log_info(f"AI [{name}] 被用户剔除，不再发送/重建页面")
+        self._removed_this_round[name] = reason
+        log_info(f"AI [{name}] 被剔除（{reason}），不再发送/重建页面")
 
     def is_running(self) -> bool:
         """讨论是否正在进行。"""
@@ -392,6 +395,7 @@ class HostedMode:
         self._is_running = True
         self._stop_requested = False
         self._removed_ais.clear()  # 新讨论开始时，清除上次的剔除记录
+        self._removed_this_round.clear()  # 清除剔除通知记录
         # 新讨论开始时，清除上一次讨论的回复缓存
         if hasattr(self.chrome, '_last_reply'):
             self.chrome._last_reply.clear()
@@ -624,14 +628,24 @@ class HostedMode:
 
             # Step 1: 军师先发言
             focal_points = extract_focal_points(prev_round_replies) if prev_round_replies else ""
+
+            # 构建AI剔除通知（如果有AI在本轮或上一轮被剔除）
+            removal_notice = ""
+            if self._removed_this_round:
+                removal_lines = [f"  - {name}：{reason}" for name, reason in self._removed_this_round.items()]
+                removal_notice = "\n【⚠️ AI变动通知】\n以下AI已被移出议事厅，不再参与讨论，请勿等待他们的回复：\n" + "\n".join(removal_lines) + "\n"
+                # 通知后清除，避免重复通知
+                self._removed_this_round.clear()
+
             if not prev_round_replies:
                 # 第一轮：军师收到话题，发表初始分析
                 arb_prompt = (
                     self._init_prefix(arb_ai, initialized, ai_list)
+                    + removal_notice
                     + build_arbiter_first_prompt(
                         my_name=arb_ai["name"],
                         topic=topic,
-                        all_ai_names=[a["name"] for a in ai_list],
+                        all_ai_names=[a["name"] for a in ai_list if a["name"] not in self._removed_ais],
                         end_signal=self.end_signal,
                         arbitration_signal=self.arbitration_signal,
                     )
@@ -640,6 +654,7 @@ class HostedMode:
                 # 后续轮：军师收到上一轮所有谋士的回复
                 arb_prompt = (
                     self._init_prefix(arb_ai, initialized, ai_list)
+                    + removal_notice
                     + build_arbiter_round_prompt(
                         my_name=arb_ai["name"],
                         topic=topic,
@@ -771,6 +786,7 @@ class HostedMode:
                             if fail_count >= 2 and ai_name not in ai_disabled:
                                 ai_disabled.add(ai_name)
                                 self._removed_ais.add(ai_name)
+                                self._removed_this_round[ai_name] = f"连续{fail_count}次超时/无响应，已自动剔除"
                                 if progress_callback:
                                     progress_callback("status", "系统",
                                         f"🚫 {ai_name} 连续 {fail_count} 次超时/失败，已自动剔除议事厅")
@@ -991,15 +1007,25 @@ class HostedMode:
 
             # Step 1: 军师先发言
             focal_points = extract_focal_points(prev_round_replies) if prev_round_replies else ""
+
+            # 构建AI剔除通知（如果有AI在本轮或上一轮被剔除）
+            removal_notice = ""
+            if self._removed_this_round:
+                removal_lines = [f"  - {name}：{reason}" for name, reason in self._removed_this_round.items()]
+                removal_notice = "\n【⚠️ AI变动通知】\n以下AI已被移出议事厅，不再参与讨论，请勿等待他们的回复：\n" + "\n".join(removal_lines) + "\n"
+                self._removed_this_round.clear()
+
             if round_count == 0:
                 # 第一轮追问：军师收到用户消息
                 arb_prompt = (
                     self._init_prefix(arb_ai, initialized, ai_list)
+                    + removal_notice
                     + f"【主公追问】\n{user_message}\n\n请{arb_ai['name']}（军师）发表你的看法。"
                 )
             else:
                 arb_prompt = (
                     self._init_prefix(arb_ai, initialized, ai_list)
+                    + removal_notice
                     + build_arbiter_round_prompt(
                         my_name=arb_ai["name"],
                         topic=user_message,
@@ -1123,6 +1149,7 @@ class HostedMode:
                             if fail_count >= 2 and ai_name not in ai_disabled:
                                 ai_disabled.add(ai_name)
                                 self._removed_ais.add(ai_name)
+                                self._removed_this_round[ai_name] = f"连续{fail_count}次超时/无响应，已自动剔除"
                                 if progress_callback:
                                     progress_callback("status", "系统",
                                         f"🚫 {ai_name} 连续 {fail_count} 次超时/失败，已自动剔除议事厅")

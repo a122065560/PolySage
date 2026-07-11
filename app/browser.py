@@ -1038,6 +1038,7 @@ class ChromeManager:
             # 检查消息长度，超过50000字或 force_file_upload=True 时自动转为文件上传
             MAX_INLINE_LENGTH = 50000
             need_file_upload = force_file_upload or len(message) > MAX_INLINE_LENGTH
+            file_just_uploaded = False  # 标记刚上传了文件，需要用剪贴板粘贴而非 execCommand
             if need_file_upload:
                 import time as _time_for_file
                 if force_file_upload:
@@ -1058,6 +1059,7 @@ class ChromeManager:
                     await self._upload_file(page, tmp_file, ai_name)
                     log_info(f"[{ai_name}] 文件上传成功，等待页面处理...")
                     await page.wait_for_timeout(2000)
+                    file_just_uploaded = True
                 except Exception as e:
                     log_warning(f"[{ai_name}] 文件上传失败: {e}，回退到截断发送")
                     # 上传失败则截断消息
@@ -1079,8 +1081,80 @@ class ChromeManager:
                 try:
                     await input_el.click()
                     await page.wait_for_timeout(300)
-                    # 方法1：用 execCommand 模拟真实文本插入（Vue/React都能识别）
-                    fill_success = await page.evaluate("""(msg) => {
+
+                    if file_just_uploaded:
+                        # 文件上传后，Slate.js 等框架的内部状态可能不一致
+                        # execCommand('insertText') 虽能视觉上插入文字，但不会触发框架状态更新
+                        # 导致发送按钮保持 disabled 状态
+                        # 直接使用剪贴板粘贴，触发完整的 paste 事件链，使框架正确同步状态
+                        log_info(f"[{ai_name}] 文件已上传，使用剪贴板粘贴方式输入消息（跳过 execCommand）")
+                        # 先清空输入框（Ctrl+A + Delete）
+                        await page.keyboard.press("Control+A")
+                        await page.keyboard.press("Delete")
+                        await page.wait_for_timeout(100)
+                        # 通过 JS 触发 paste 事件
+                        paste_ok = await page.evaluate("""(msg) => {
+                            const el = document.querySelector('textarea, [contenteditable="true"], [role="textbox"]');
+                            if (!el) return false;
+                            el.focus();
+                            // 尝试1: 用 Clipboard API 触发 paste 事件（Slate.js 能识别）
+                            try {
+                                const dt = new DataTransfer();
+                                dt.setData('text/plain', msg);
+                                const pasteEvent = new ClipboardEvent('paste', {
+                                    bubbles: true, cancelable: true, clipboardData: dt
+                                });
+                                el.dispatchEvent(pasteEvent);
+                                return true;
+                            } catch(e) {}
+                            // 尝试2: execCommand('insertText')
+                            try {
+                                const inserted = document.execCommand('insertText', false, msg);
+                                if (inserted) return true;
+                            } catch(e) {}
+                            // 尝试3: 设置 textContent + 手动触发 input 事件
+                            el.textContent = msg;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                            return true;
+                        }""", message)
+                        if not paste_ok:
+                            # 最终回退：按行输入
+                            log_warning(f"[{ai_name}] 剪贴板粘贴失败，回退到按行输入")
+                            await input_el.click()
+                            await page.wait_for_timeout(100)
+                            lines = message.split('\n')
+                            for i, line in enumerate(lines):
+                                if i > 0:
+                                    await page.keyboard.press("Shift+Enter")
+                                    await page.wait_for_timeout(50)
+                                if line:
+                                    await page.keyboard.type(line, delay=5)
+                        await page.wait_for_timeout(600)
+                        # 验证发送按钮是否已激活
+                        btn_active = await page.evaluate("""() => {
+                            const btn = document.querySelector('button[aria-label*="发送"], .enter-icon-container, div[class*="send"], [data-testid="send-button"], button[class*="send"]');
+                            if (btn) {
+                                if (btn.disabled) return false;
+                                if (btn.className && btn.className.includes('empty')) return false;
+                                if (btn.getAttribute('aria-disabled') === 'true') return false;
+                                return true;
+                            }
+                            // 没找到按钮，检查 contenteditable 是否有内容
+                            const ce = document.querySelector('[contenteditable="true"]');
+                            if (ce && ce.textContent && ce.textContent.trim().length > 0) return true;
+                            return false;
+                        }""")
+                        if not btn_active:
+                            log_warning(f"[{ai_name}] 剪贴板粘贴后发送按钮仍为disabled，尝试 keyboard.type 补偿")
+                            await input_el.click()
+                            await page.wait_for_timeout(100)
+                            await page.keyboard.type(message, delay=10)
+                            await page.wait_for_timeout(500)
+                        log_info(f"[{ai_name}] 文件上传后消息已粘贴（长度 {len(message)}）")
+                    else:
+                        # 方法1：用 execCommand 模拟真实文本插入（Vue/React都能识别）
+                        fill_success = await page.evaluate("""(msg) => {
                         const el = document.querySelector('textarea, [contenteditable="true"], [role="textbox"]');
                         if (!el) return false;
                         el.focus();
@@ -1121,82 +1195,77 @@ class ChromeManager:
                         el.dispatchEvent(new Event('input', { bubbles: true }));
                         return true;
                     }""", message)
-                    await page.wait_for_timeout(300)
-                    if not fill_success:
-                        # 回退到 fill
-                        await input_el.fill(message)
-                        await page.wait_for_timeout(200)
-                    # 等待 React 同步：填充后休息一段时间，让前端框架有时间处理状态
-                    await page.wait_for_timeout(600)
-                    # 验证Vue/React是否同步了状态：检查发送按钮是否不再是"empty"/"disabled"状态
-                    state_ok = await page.evaluate("""() => {
-                        // 注意：button:has-text() 是 Playwright 专有选择器，不能用在 document.querySelector 中
-                        // 只使用标准 CSS 选择器
-                        const btn = document.querySelector('button[aria-label*="发送"], .enter-icon-container, div[class*="send"], [data-testid="send-button"]');
-                        if (btn) {
-                            if (btn.disabled) return false;  // 按钮仍为 disabled，框架未同步
-                            if (btn.className && btn.className.includes('empty')) return false;
-                            if (btn.getAttribute('aria-disabled') === 'true') return false;
-                        }
-                        const ta = document.querySelector('textarea');
-                        if (ta && ta.value && ta.value.length > 5) return true;
-                        // 检查 contenteditable 是否有实际内容
-                        const ce = document.querySelector('[contenteditable="true"]');
-                        if (ce && ce.textContent && ce.textContent.trim().length > 5) return true;
-                        return true;  // 无法判断，假设成功
-                    }""")
-                    if not state_ok:
-                        log_warning(f"[{ai_name}] 填充后发送按钮仍为disabled状态，尝试用剪贴板粘贴模拟真实输入")
-                        # 对 contenteditable 元素（如千问的 Slate.js），用剪贴板粘贴输入
-                        # 注意：keyboard.type 遇到 \n 会按 Enter 键，在聊天界面会触发发送，导致消息分段
-                        # 剪贴板粘贴能正确处理多行文本，且触发完整的 paste 事件链使 Slate.js 同步状态
-                        await input_el.click()
-                        await page.wait_for_timeout(200)
-                        # 先清空（Ctrl+A + Delete）
-                        await page.keyboard.press("Control+A")
-                        await page.keyboard.press("Delete")
-                        await page.wait_for_timeout(100)
-                        # 通过 JS 设置剪贴板内容，然后模拟 Ctrl+V 粘贴
-                        paste_ok = await page.evaluate("""(msg) => {
-                            const el = document.querySelector('textarea, [contenteditable="true"], [role="textbox"]');
-                            if (!el) return false;
-                            el.focus();
-                            // 尝试1: 用 Clipboard API 设置剪贴板
-                            try {
-                                const dt = new DataTransfer();
-                                dt.setData('text/plain', msg);
-                                const pasteEvent = new ClipboardEvent('paste', {
-                                    bubbles: true, cancelable: true, clipboardData: dt
-                                });
-                                el.dispatchEvent(pasteEvent);
-                                return true;
-                            } catch(e) {}
-                            // 尝试2: 直接用 execCommand('insertText') 插入纯文本（触发 input 事件）
-                            try {
-                                const inserted = document.execCommand('insertText', false, msg);
-                                if (inserted) return true;
-                            } catch(e) {}
-                            // 尝试3: 设置 textContent + 手动触发 input 事件
-                            el.textContent = msg;
-                            el.dispatchEvent(new Event('input', { bubbles: true }));
-                            el.dispatchEvent(new Event('change', { bubbles: true }));
-                            return true;
-                        }""", message)
-                        if not paste_ok:
-                            # 最终回退：按行输入，行间用 Shift+Enter 换行
-                            log_warning(f"[{ai_name}] 剪贴板粘贴失败，回退到按行输入+Shift+Enter")
+                        await page.wait_for_timeout(300)
+                        if not fill_success:
+                            # 回退到 fill
+                            await input_el.fill(message)
+                            await page.wait_for_timeout(200)
+                        # 等待 React 同步：填充后休息一段时间，让前端框架有时间处理状态
+                        await page.wait_for_timeout(600)
+                        # 验证Vue/React是否同步了状态：检查发送按钮是否不再是"empty"/"disabled"状态
+                        state_ok = await page.evaluate("""() => {
+                            // 注意：button:has-text() 是 Playwright 专有选择器，不能用在 document.querySelector 中
+                            // 只使用标准 CSS 选择器
+                            const btn = document.querySelector('button[aria-label*="发送"], .enter-icon-container, div[class*="send"], [data-testid="send-button"]');
+                            if (btn) {
+                                if (btn.disabled) return false;  // 按钮仍为 disabled，框架未同步
+                                if (btn.className && btn.className.includes('empty')) return false;
+                                if (btn.getAttribute('aria-disabled') === 'true') return false;
+                            }
+                            const ta = document.querySelector('textarea');
+                            if (ta && ta.value && ta.value.length > 5) return true;
+                            // 检查 contenteditable 是否有实际内容
+                            const ce = document.querySelector('[contenteditable="true"]');
+                            if (ce && ce.textContent && ce.textContent.trim().length > 5) return true;
+                            return true;  // 无法判断，假设成功
+                        }""")
+                        if not state_ok:
+                            log_warning(f"[{ai_name}] 填充后发送按钮仍为disabled状态，尝试用剪贴板粘贴模拟真实输入")
+                            # 对 contenteditable 元素（如千问的 Slate.js），用剪贴板粘贴输入
                             await input_el.click()
+                            await page.wait_for_timeout(200)
+                            # 先清空（Ctrl+A + Delete）
+                            await page.keyboard.press("Control+A")
+                            await page.keyboard.press("Delete")
                             await page.wait_for_timeout(100)
-                            lines = message.split('\n')
-                            for i, line in enumerate(lines):
-                                if i > 0:
-                                    await page.keyboard.press("Shift+Enter")
-                                    await page.wait_for_timeout(50)
-                                if line:
-                                    await page.keyboard.type(line, delay=5)
-                        await page.wait_for_timeout(500)
-                        log_info(f"[{ai_name}] 剪贴板粘贴输入完成（长度 {len(message)}）")
-                    log_info(f"[{ai_name}] 消息已填充（长度 {len(message)}），开始发送...")
+                            # 通过 JS 设置剪贴板内容，然后模拟 Ctrl+V 粘贴
+                            paste_ok = await page.evaluate("""(msg) => {
+                                const el = document.querySelector('textarea, [contenteditable="true"], [role="textbox"]');
+                                if (!el) return false;
+                                el.focus();
+                                try {
+                                    const dt = new DataTransfer();
+                                    dt.setData('text/plain', msg);
+                                    const pasteEvent = new ClipboardEvent('paste', {
+                                        bubbles: true, cancelable: true, clipboardData: dt
+                                    });
+                                    el.dispatchEvent(pasteEvent);
+                                    return true;
+                                } catch(e) {}
+                                try {
+                                    const inserted = document.execCommand('insertText', false, msg);
+                                    if (inserted) return true;
+                                } catch(e) {}
+                                el.textContent = msg;
+                                el.dispatchEvent(new Event('input', { bubbles: true }));
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                return true;
+                            }""", message)
+                            if not paste_ok:
+                                # 最终回退：按行输入，行间用 Shift+Enter 换行
+                                log_warning(f"[{ai_name}] 剪贴板粘贴失败，回退到按行输入+Shift+Enter")
+                                await input_el.click()
+                                await page.wait_for_timeout(100)
+                                lines = message.split('\n')
+                                for i, line in enumerate(lines):
+                                    if i > 0:
+                                        await page.keyboard.press("Shift+Enter")
+                                        await page.wait_for_timeout(50)
+                                    if line:
+                                        await page.keyboard.type(line, delay=5)
+                            await page.wait_for_timeout(500)
+                            log_info(f"[{ai_name}] 剪贴板粘贴输入完成（长度 {len(message)}）")
+                        log_info(f"[{ai_name}] 消息已填充（长度 {len(message)}），开始发送...")
                     fill_ok = True
                     break
                 except Exception as e:
