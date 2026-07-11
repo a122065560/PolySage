@@ -12,6 +12,7 @@ ui_main_window - PyQt6 主窗口及组件布局
 import asyncio
 import json
 import os
+from datetime import datetime
 
 from ui_styles import GLOBAL_QSS, ACCENT, TEXT_SECONDARY, TEXT_PRIMARY, SUCCESS, BG_WINDOW
 from ui_flowlayout import FlowLayout
@@ -1881,6 +1882,7 @@ class HostedModeTab(QWidget):
         # 即时状态提示栏（输入框上方）
         self.status_bar = QLabel("")
         self.status_bar.setObjectName("instant_status")
+        self.status_bar.setWordWrap(True)
         self.status_bar.setStyleSheet("""
             QLabel#instant_status {
                 background-color: #F0F4FF;
@@ -1970,7 +1972,7 @@ class HostedModeTab(QWidget):
             if len(active_ais) < 2:
                 self.main_window._show_toast(
                     f"⚠️ 至少需要选择 2 个 AI 参与讨论。\n当前: {len(active_ais)} 个\n\n"
-                    f"请在中军帐中选中AI并等待其状态变为绿色")
+                    f"请在议事厅中选中AI并等待其状态变为绿色")
                 return
             if self.main_window._start_in_progress:
                 log_warning("讨论正在启动中，忽略发送")
@@ -2206,6 +2208,10 @@ class MainWindow(QMainWindow):
         elif role == "status":
             cs.append_status(text)
             log_info(f"状态: {text}")
+        elif role == "round_status":
+            # 轮次状态：显示在输入框上方的状态栏（不写入对话流）
+            self.hosted_tab._set_status(text)
+            log_info(f"轮次状态: {text}")
         elif role == "discussion_start":
             cs.start_counting()
         elif role == "error":
@@ -2218,11 +2224,11 @@ class MainWindow(QMainWindow):
             log_info(f"用户插话: {text[:80]}...")
         elif role == "ai_speaking":
             # AI发言状态：text=True=正在发言, False=发言完毕
+            # 注意：不覆盖 round_status 显示的轮次状态，仅记录日志
             if text == True or text == "True":
-                self.hosted_tab._set_status(f"💬 {name} 正在发言...")
-            # 发言完毕时清除状态
+                log_info(f"AI 发言开始: {name}")
             elif text == False or text == "False":
-                self.hosted_tab._set_status("")
+                log_info(f"AI 发言结束: {name}")
 
     def _on_discussion_done(self, result: dict):
         """讨论完成（大脑线程发来，主线程更新 UI）。"""
@@ -2324,7 +2330,7 @@ class MainWindow(QMainWindow):
                     }
                 """)
 
-        # Chrome 未运行时，强制将所有中军帐 AI 变回橙色
+        # Chrome 未运行时，强制将所有议事厅 AI 变回橙色
         if not chrome_running:
             import time as _time
             for name in self.active_ais:
@@ -2355,10 +2361,10 @@ class MainWindow(QMainWindow):
                 self.chrome_mgr.clear_thinking_cache(name)
         self._last_page_open = current_page_open
 
-        # 中军帐为唯一权威源：
-        # - 关闭网页 → 不同步至中军帐（不剔除），只标记AI为橙色
-        # - 关闭中军帐 → 才同步关闭网页
-        # 不再因网页关闭而自动剔除中军帐AI
+        # 议事厅为唯一权威源：
+        # - 关闭网页 → 不同步至议事厅（不剔除），只标记AI为橙色
+        # - 关闭议事厅 → 才同步关闭网页
+        # 不再因网页关闭而自动剔除议事厅AI
 
     # _login_check_loop 已移至 WorkerThread，主线程不再运行检测循环
 
@@ -2371,7 +2377,7 @@ class MainWindow(QMainWindow):
         if icon:
             icon.set_state(cached["color"])
 
-        # 同步更新中军帐内 AI 芯片的框体颜色（含军师）
+        # 同步更新议事厅内 AI 芯片的框体颜色（含军师）
         chip = self._ai_chips.get(ai_name)
         if chip is not None:
             # 更新 tooltip：橙色只显示原因，绿色才显示操作提示
@@ -2642,15 +2648,15 @@ class MainWindow(QMainWindow):
         self.file_list_container.setLayout(self.file_list_layout)
         left_layout.addWidget(self.file_list_container)
 
-        # 3. AI 选择器（辕门外 + 中军帐）
-        # 辕门外：按钮高度 2 倍
+        # 3. AI 选择器（厅外 + 议事厅）
+        # 厅外：按钮高度 2 倍
         self.ai_inactive_frame = QFrame()
         self.ai_inactive_frame.setObjectName("ai_inactive_frame")
         self.ai_inactive_frame.setFixedHeight(110)
         self.ai_inactive_outer_layout = QVBoxLayout(self.ai_inactive_frame)
         self.ai_inactive_outer_layout.setContentsMargins(0, 0, 0, 0)
         self.ai_inactive_outer_layout.setSpacing(0)
-        self.ai_inactive_title = QLabel("辕门外:")
+        self.ai_inactive_title = QLabel("厅外:")
         self.ai_inactive_title.setFixedHeight(18)
         self.ai_inactive_title.setStyleSheet("font-size: 11px; color: #86868B; background: transparent; border: none; padding-left: 6px;")
         self.ai_inactive_outer_layout.addWidget(self.ai_inactive_title)
@@ -2669,14 +2675,14 @@ class MainWindow(QMainWindow):
         self.ai_inactive_container = self.ai_inactive_inner
         left_layout.addWidget(self.ai_inactive_frame)
 
-        # 中军帐：按钮高度 2 倍
+        # 议事厅：按钮高度 2 倍
         self.ai_active_frame = QFrame()
         self.ai_active_frame.setObjectName("ai_active_frame")
         self.ai_active_frame.setFixedHeight(110)
         self.ai_active_outer_layout = QVBoxLayout(self.ai_active_frame)
         self.ai_active_outer_layout.setContentsMargins(0, 0, 0, 0)
         self.ai_active_outer_layout.setSpacing(0)
-        self.ai_active_title = QLabel("中军帐:")
+        self.ai_active_title = QLabel("议事厅:")
         self.ai_active_title.setFixedHeight(18)
         self.ai_active_title.setStyleSheet("font-size: 11px; color: #007AFF; font-weight: 600; background: transparent; border: none; padding-left: 6px;")
         self.ai_active_outer_layout.addWidget(self.ai_active_title)
@@ -2701,13 +2707,17 @@ class MainWindow(QMainWindow):
         # 弹簧：把所有内容推到顶部，底部不留空
         left_layout.addStretch(1)
 
-        # 底部按钮（复制全文）
+        # 底部按钮（复制全文 + 保存结案）
         copy_row = QHBoxLayout()
         copy_row.setSpacing(4)
         self.copy_all_btn = QPushButton("复制全文")
         self.copy_all_btn.setObjectName("small")
         self.copy_all_btn.clicked.connect(self._on_copy_all)
         copy_row.addWidget(self.copy_all_btn, stretch=1)
+        self.save_convo_btn = QPushButton("保存结案")
+        self.save_convo_btn.setObjectName("small")
+        self.save_convo_btn.clicked.connect(self._on_save_conversation)
+        copy_row.addWidget(self.save_convo_btn, stretch=1)
         left_layout.addLayout(copy_row)
 
         action_row = QHBoxLayout()
@@ -2952,6 +2962,10 @@ class MainWindow(QMainWindow):
         url = platform.get("url", "")
 
         if activate:
+            # Bug4: 讨论进行中不允许从议事厅外加入AI（新AI不知道讨论内容）
+            if getattr(self, '_discussion_running', False):
+                self._show_toast(f"⚠️ 讨论进行中，不允许中途加入AI\n请等讨论结束后再加入 {name}")
+                return
             if name not in self.active_ais:
                 self.active_ais.append(name)
             # 清除缓存，触发重新检测（包括思考模式）
@@ -2965,6 +2979,9 @@ class MainWindow(QMainWindow):
                 self.active_ais.remove(name)
                 # 销毁 AIWorker（会自动关闭页面）
                 self.worker.on_ai_removed(name)
+                # Bug3: 通知大脑线程该AI已被剔除，不再发送/重建页面
+                if self.worker._hosted:
+                    self.worker._hosted.mark_ai_removed(name)
                 # Chrome 运行时自动关闭对应网页
                 if url and self.chrome_mgr.is_chrome_running():
                     self.worker.submit(self._sync_close_page(name, url))
@@ -2973,9 +2990,9 @@ class MainWindow(QMainWindow):
         self._refresh_ai_chips()
 
     def _set_arbitrator(self, name: str):
-        """设置军师（右键点击中军帐 AI 触发）。同步写入 per-platform is_arbitrator。"""
+        """设置军师（右键点击议事厅 AI 触发）。同步写入 per-platform is_arbitrator。"""
         if name not in self.active_ais:
-            self._show_toast(f"{name} 不在中军帐内，无法设为军师")
+            self._show_toast(f"{name} 不在议事厅内，无法设为军师")
             return
         self.config_mgr.set("discussion.arbitrator", name)
         # 同步更新 per-platform is_arbitrator 标记
@@ -2992,10 +3009,10 @@ class MainWindow(QMainWindow):
         self._refresh_ai_chips()
 
     def _ensure_arbitrator(self):
-        """确保中军帐内有军师。
+        """确保议事厅内有军师。
         - 0个AI：无军师
         - 1个AI：默认该AI为军师
-        - 多个AI：如果当前军师不在中军帐内，自动设第一个为军师
+        - 多个AI：如果当前军师不在议事厅内，自动设第一个为军师
         """
         if not self.active_ais:
             return
@@ -3014,7 +3031,7 @@ class MainWindow(QMainWindow):
                 self.config_mgr.set("discussion.arbitrator", current_arb)
                 self.config_mgr.save()
             return
-        # 军师不在中军帐内，自动设第一个为军师
+        # 军师不在议事厅内，自动设第一个为军师
         new_arb = self.active_ais[0]
         self.config_mgr.set("discussion.arbitrator", new_arb)
         self.config_mgr.save()
@@ -3228,6 +3245,35 @@ class MainWindow(QMainWindow):
         clipboard = QApplication.clipboard()
         clipboard.setText(text)
         self.statusBar().showMessage("✅ 全部对话已复制到剪贴板", 3000)
+
+    def _on_save_conversation(self):
+        """将对话内容保存至本地文件，默认文件名为 聚慧_日期时间。"""
+        text = self.hosted_tab.chat_stream.get_all_text()
+
+        if not text.strip():
+            self.statusBar().showMessage("没有对话内容可保存", 3000)
+            return
+
+        # 默认文件名：聚慧_YYYYMMDD_HHMMSS.txt
+        default_name = f"聚慧_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        default_path = os.path.join(os.path.expanduser("~"), "Desktop", default_name)
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "保存对话内容",
+            default_path,
+            "文本文件 (*.txt);;所有文件 (*)",
+        )
+
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(text)
+            self.statusBar().showMessage(f"✅ 已保存到 {file_path}", 5000)
+        except Exception as e:
+            QMessageBox.warning(self, "保存失败", f"无法保存文件：\n{e}")
 
     # ------------------------------------------------------------------
     # 关闭事件

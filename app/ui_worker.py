@@ -7,8 +7,8 @@
 
 关键设计：
   - Chrome 启动前：不创建任何 AIWorker，大脑空闲
-  - Chrome 启动后：为每个中军帐AI创建 AIWorker，开始持续监控
-  - AI 进出中军帐：动态创建/销毁 AIWorker
+  - Chrome 启动后：为每个议事厅AI创建 AIWorker，开始持续监控
+  - AI 进出议事厅：动态创建/销毁 AIWorker
   - 讨论时：大脑通过 queue 向 AIWorker 发命令，AIWorker 执行完报告大脑
 """
 
@@ -348,7 +348,7 @@ class WorkerThread(QThread):
         self.submit(self._start_chrome_async(active_ais))
 
     async def _start_chrome_async(self, active_ais: list):
-        """启动 Chrome，然后为中军帐每个AI创建 AIWorker。"""
+        """启动 Chrome，然后为议事厅每个AI创建 AIWorker。"""
         self.button_state.emit(False, False)
         self.status_msg.emit("正在启动浏览器...", 0)
         self._chrome_mgr.clear_thinking_cache()
@@ -365,7 +365,7 @@ class WorkerThread(QThread):
                     self._brain_task = asyncio.ensure_future(self._brain_loop())
                     log_info("[大脑] 大脑调度循环已启动")
 
-                # 为每个中军帐AI创建 AIWorker
+                # 为每个议事厅AI创建 AIWorker
                 platforms = self.config_mgr.get_ai_platforms()
                 active_set = set(active_ais)
                 for p in platforms:
@@ -398,7 +398,7 @@ class WorkerThread(QThread):
             log_info(f"[大脑] 销毁 AIWorker: {name}")
 
     def on_ai_added(self, name: str):
-        """AI 进入中军帐时创建 AIWorker（主线程调用）。"""
+        """AI 进入议事厅时创建 AIWorker（主线程调用）。"""
         if not self._chrome_mgr or not self._chrome_mgr.is_chrome_running():
             return  # Chrome 未启动，不创建
         platform = self.config_mgr.get_platform_by_name(name)
@@ -406,7 +406,7 @@ class WorkerThread(QThread):
             self.submit(self._create_ai_worker(platform))
 
     def on_ai_removed(self, name: str):
-        """AI 离开中军帐 — 主线程只发命令，大脑线程销毁AIWorker。"""
+        """AI 离开议事厅 — 主线程只发命令，大脑线程销毁AIWorker。"""
         self.submit(self._async_destroy_ai_worker(name))
 
     async def _async_destroy_ai_worker(self, name: str):
@@ -579,9 +579,20 @@ class WorkerThread(QThread):
                 except Exception as e:
                     log_warning(f"销毁 AIWorker {name} 失败: {e}")
 
-            # 3. 关闭 Chrome（在线程池中执行，不阻塞事件循环）
+            # 3. 关闭 Chrome
             if self._chrome_mgr:
-                await asyncio.to_thread(self._chrome_mgr.stop_chrome)
+                browser_mode = self._chrome_mgr.config.get("chrome", {}).get("browser_mode", "built-in")
+                if browser_mode == "built-in":
+                    # 内置浏览器：先在事件循环中异步关闭 Playwright 资源
+                    try:
+                        await self._chrome_mgr.async_stop_built_in()
+                    except Exception as e:
+                        log_warning(f"异步关闭内置浏览器失败: {e}")
+                    # 再执行系统级清理（端口检查、pkill 等）
+                    await asyncio.to_thread(self._chrome_mgr.stop_chrome)
+                else:
+                    # 系统Chrome模式：直接同步关闭
+                    await asyncio.to_thread(self._chrome_mgr.stop_chrome)
 
             # 4. 通知UI
             self.chrome_stopped_signal.emit()

@@ -44,11 +44,15 @@ python3 -m pip install -r requirements.txt --break-system-packages -q 2>&1 | tai
 echo -e "${GREEN}  ✅ 项目依赖已就绪${NC}"
 
 # 下载 Playwright Chromium 到临时目录（避免 PyInstaller collect_all 处理 Mach-O 二进制失败）
-echo -e "${YELLOW}  ⏳ 下载 Playwright Chromium...${NC}"
 PW_BROWSERS_TMP="/tmp/pw-chromium-cache"
-rm -rf "$PW_BROWSERS_TMP"
-PLAYWRIGHT_BROWSERS_PATH="$PW_BROWSERS_TMP" python3 -m playwright install chromium 2>&1 | tail -3
-echo -e "${GREEN}  ✅ Chromium 已下载到临时目录${NC}"
+if [ -d "$PW_BROWSERS_TMP/chromium-1228" ]; then
+    echo -e "${GREEN}  ✅ Chromium 已存在于临时目录，跳过下载${NC}"
+else
+    echo -e "${YELLOW}  ⏳ 下载 Playwright Chromium...${NC}"
+    rm -rf "$PW_BROWSERS_TMP"
+    PLAYWRIGHT_BROWSERS_PATH="$PW_BROWSERS_TMP" python3 -m playwright install chromium 2>&1 | tail -3
+    echo -e "${GREEN}  ✅ Chromium 已下载到临时目录${NC}"
+fi
 
 # 检查 PyInstaller
 if ! python3 -c "import PyInstaller" 2>/dev/null; then

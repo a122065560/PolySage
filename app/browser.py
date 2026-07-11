@@ -558,6 +558,37 @@ class ChromeManager:
         except Exception:
             return False
 
+    async def async_stop_built_in(self):
+        """在内置浏览器模式下，异步关闭 Playwright context 和 browser。
+        必须在事件循环线程中调用（如大脑线程的 asyncio 循环）。
+        """
+        # 1. 关闭 context（会关闭所有页面）
+        if self._context is not None:
+            try:
+                await self._context.close()
+                log_info("内置浏览器 context 已异步关闭")
+            except Exception as e:
+                log_warning(f"异步关闭 context 失败: {e}")
+            self._context = None
+
+        # 2. 关闭 browser
+        if self._browser is not None:
+            try:
+                await self._browser.close()
+                log_info("内置浏览器 browser 已异步关闭")
+            except Exception as e:
+                log_warning(f"异步关闭 browser 失败: {e}")
+            self._browser = None
+
+        # 3. 停止 Playwright
+        if self._playwright is not None:
+            try:
+                await self._playwright.stop()
+                log_info("Playwright 已异步停止")
+            except Exception as e:
+                log_warning(f"异步停止 Playwright 失败: {e}")
+            self._playwright = None
+
     def stop_chrome(self):
         """
         停止浏览器调试进程（跨平台）。
@@ -571,47 +602,13 @@ class ChromeManager:
         port = self.config.get("chrome", {}).get("debug_port", 9222)
         browser_mode = self.config.get("chrome", {}).get("browser_mode", "built-in")
 
-        # 内置浏览器模式：优先通过 Playwright API 关闭
-        if browser_mode == "built-in" and self._context is not None:
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    task = asyncio.ensure_future(self._context.close())
-                    def _suppress(t):
-                        try:
-                            t.result()
-                        except Exception:
-                            pass
-                    task.add_done_callback(_suppress)
-                else:
-                    # 事件循环已停止，尝试同步关闭
-                    try:
-                        loop.run_until_complete(self._context.close())
-                    except Exception:
-                        pass
-                log_info("内置浏览器 context 已关闭")
-            except Exception as e:
-                log_warning(f"关闭内置浏览器 context 失败: {e}")
-
-        # 清理 Playwright 资源
-        self._context = None
-        self._browser = None
-        if self._playwright:
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    task = asyncio.ensure_future(self._playwright.stop())
-                    def _suppress(t):
-                        try:
-                            t.result()
-                        except Exception:
-                            pass
-                    task.add_done_callback(_suppress)
-                else:
-                    pass
-            except Exception:
-                pass
+        # 内置浏览器模式：Playwright context 是异步对象，不能在同步线程中关闭
+        # 只清理引用，真正的异步关闭由 async_stop_built_in() 完成
+        if browser_mode == "built-in":
+            self._context = None
+            self._browser = None
             self._playwright = None
+            log_info("内置浏览器引用已清理（异步关闭由 async_stop_built_in 完成）")
 
         # 内置浏览器模式：Playwright API 关闭后，端口通常已释放
         if not is_port_in_use(port):
@@ -1083,12 +1080,16 @@ class ChromeManager:
                             el.value = '';
                             el.select();
                         } else {
+                            // contenteditable 元素：清空 Slate.js/ProseMirror 内部状态
                             el.textContent = '';
                             const range = document.createRange();
                             range.selectNodeContents(el);
                             const sel = window.getSelection();
                             sel.removeAllRanges();
                             sel.addRange(range);
+                            // 尝试 selectAll + delete 清除 Slate.js 内部状态
+                            document.execCommand('selectAll', false, null);
+                            document.execCommand('delete', false, null);
                         }
                         // 用 execCommand 插入文本（触发完整的input事件链）
                         const inserted = document.execCommand('insertText', false, msg);
@@ -1105,6 +1106,8 @@ class ChromeManager:
                             el.dispatchEvent(new Event('change', { bubbles: true }));
                             return true;
                         }
+                        // contenteditable 回退：直接设置 textContent + 触发事件
+                        // 注意：Slate.js 等框架可能不识别此方式，后续会用 keyboard.type 补偿
                         el.textContent = msg;
                         el.dispatchEvent(new Event('input', { bubbles: true }));
                         return true;
@@ -1116,28 +1119,74 @@ class ChromeManager:
                         await page.wait_for_timeout(200)
                     # 等待 React 同步：填充后休息一段时间，让前端框架有时间处理状态
                     await page.wait_for_timeout(600)
-                    # 验证Vue/React是否同步了状态：检查发送按钮是否不再是"empty"状态
+                    # 验证Vue/React是否同步了状态：检查发送按钮是否不再是"empty"/"disabled"状态
                     state_ok = await page.evaluate("""() => {
-                        const btn = document.querySelector('.enter-icon-container, div[class*="send"], button[aria-label*="发送"], [data-testid="send-button"]');
-                        if (btn && btn.className && btn.className.includes('empty')) {
-                            return false;  // 按钮仍为empty状态，框架未同步
+                        // 注意：button:has-text() 是 Playwright 专有选择器，不能用在 document.querySelector 中
+                        // 只使用标准 CSS 选择器
+                        const btn = document.querySelector('button[aria-label*="发送"], .enter-icon-container, div[class*="send"], [data-testid="send-button"]');
+                        if (btn) {
+                            if (btn.disabled) return false;  // 按钮仍为 disabled，框架未同步
+                            if (btn.className && btn.className.includes('empty')) return false;
+                            if (btn.getAttribute('aria-disabled') === 'true') return false;
                         }
                         const ta = document.querySelector('textarea');
                         if (ta && ta.value && ta.value.length > 5) return true;
+                        // 检查 contenteditable 是否有实际内容
+                        const ce = document.querySelector('[contenteditable="true"]');
+                        if (ce && ce.textContent && ce.textContent.trim().length > 5) return true;
                         return true;  // 无法判断，假设成功
                     }""")
                     if not state_ok:
-                        log_warning(f"[{ai_name}] 填充后发送按钮仍为empty状态，尝试用keyboard.type补充")
-                        # 用execCommand再试一次
-                        await page.evaluate("""(msg) => {
-                            const el = document.querySelector('textarea');
-                            if (el) {
-                                el.focus();
-                                el.select();
-                                document.execCommand('insertText', false, msg);
-                            }
+                        log_warning(f"[{ai_name}] 填充后发送按钮仍为disabled状态，尝试用剪贴板粘贴模拟真实输入")
+                        # 对 contenteditable 元素（如千问的 Slate.js），用剪贴板粘贴输入
+                        # 注意：keyboard.type 遇到 \n 会按 Enter 键，在聊天界面会触发发送，导致消息分段
+                        # 剪贴板粘贴能正确处理多行文本，且触发完整的 paste 事件链使 Slate.js 同步状态
+                        await input_el.click()
+                        await page.wait_for_timeout(200)
+                        # 先清空（Ctrl+A + Delete）
+                        await page.keyboard.press("Control+A")
+                        await page.keyboard.press("Delete")
+                        await page.wait_for_timeout(100)
+                        # 通过 JS 设置剪贴板内容，然后模拟 Ctrl+V 粘贴
+                        paste_ok = await page.evaluate("""(msg) => {
+                            const el = document.querySelector('textarea, [contenteditable="true"], [role="textbox"]');
+                            if (!el) return false;
+                            el.focus();
+                            // 尝试1: 用 Clipboard API 设置剪贴板
+                            try {
+                                const dt = new DataTransfer();
+                                dt.setData('text/plain', msg);
+                                const pasteEvent = new ClipboardEvent('paste', {
+                                    bubbles: true, cancelable: true, clipboardData: dt
+                                });
+                                el.dispatchEvent(pasteEvent);
+                                return true;
+                            } catch(e) {}
+                            // 尝试2: 直接用 execCommand('insertText') 插入纯文本（触发 input 事件）
+                            try {
+                                const inserted = document.execCommand('insertText', false, msg);
+                                if (inserted) return true;
+                            } catch(e) {}
+                            // 尝试3: 设置 textContent + 手动触发 input 事件
+                            el.textContent = msg;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                            return true;
                         }""", message)
-                        await page.wait_for_timeout(300)
+                        if not paste_ok:
+                            # 最终回退：按行输入，行间用 Shift+Enter 换行
+                            log_warning(f"[{ai_name}] 剪贴板粘贴失败，回退到按行输入+Shift+Enter")
+                            await input_el.click()
+                            await page.wait_for_timeout(100)
+                            lines = message.split('\n')
+                            for i, line in enumerate(lines):
+                                if i > 0:
+                                    await page.keyboard.press("Shift+Enter")
+                                    await page.wait_for_timeout(50)
+                                if line:
+                                    await page.keyboard.type(line, delay=5)
+                        await page.wait_for_timeout(500)
+                        log_info(f"[{ai_name}] 剪贴板粘贴输入完成（长度 {len(message)}）")
                     log_info(f"[{ai_name}] 消息已填充（长度 {len(message)}），开始发送...")
                     fill_ok = True
                     break
@@ -1224,6 +1273,11 @@ class ChromeManager:
                 # 通义千问侧边栏元素
                 "我的空间", "智能体", "对话分组", "新分组",
                 "最近对话", "Qwen9953", "新建聊天",
+                # 通义千问功能菜单项
+                "PPT创作", "AI生视频", "AI生图",
+                # 智谱清言文件管理UI
+                "全选", "取消", "删除", "已选", "下载", "重命名",
+                "全选已选",
                 # MiniMax分段回复UI标签
                 "继续生成", "查看更多", "加载更多",
             ]
@@ -1302,7 +1356,10 @@ class ChromeManager:
                     await asyncio.sleep(retry_interval)
                     continue
                 # 验证：回复太短（<20字）时很可能是提取到了页面片段而非完整AI回复
-                if len(reply_text.strip()) < 20:
+                # 但对于包含已知标识（<ok> <End> <结案>）的短回复，应直接接受
+                _known_signals = ["<ok>", "<end>", "<结案>", "<ok/>"]
+                _is_known_signal = any(sig in reply_text.lower() for sig in _known_signals)
+                if len(reply_text.strip()) < 20 and not _is_known_signal:
                     log_warning(f"[{ai_name}] 提取内容过短({len(reply_text)}字: {reply_text[:30]})，可能不是完整回复，重试 {retry+1}/{max_retries}...")
                     await asyncio.sleep(retry_interval)
                     continue
@@ -2107,6 +2164,8 @@ class ChromeManager:
                     '全部', '未读', '已读', '置顶',
                     '深度思考已完成', '深度思考', '思考已完成',
                     'AI生视频',
+                    // 智谱清言文件管理UI
+                    '全选', '取消', '删除', '已选', '下载', '重命名',
                 ]);
 
                 // ---- 正则黑名单：匹配"回复1/4"等分段UI标签 ----
@@ -2205,6 +2264,14 @@ class ChromeManager:
                     '深度思考已完成',
                     '深度思考',
                     '思考已完成',
+                    // 通义千问 UI 标签
+                    'PPT创作',
+                    'AI生视频',
+                    'AI生图',
+                    '智能体',
+                    // 智谱清言文件管理 UI
+                    '全选', '取消', '删除', '已选', '下载', '重命名',
+                    '全选已选',
                 ];
                 function isPlaceholderText(el) {
                     const text = (el.innerText || '').trim();
@@ -2305,6 +2372,7 @@ class ChromeManager:
                     '.ds-markdown--content',
                     'div[class*="message-content"]:not([class*="think"])',
                     'div[class*="markdown-body"]:not([class*="think"])',
+                    'div[class*="markdown-container"]',
                     'div[class*="message__content"]',
                     'div[class*="answer-content"]',
                     'div[class*="reply-content"]',
@@ -2418,6 +2486,8 @@ class ChromeManager:
                         if (isThinkingElement(el)) continue;
                         if (isUIElement(el)) continue;
                         if (isUILabel(el)) continue;
+                        if (isPlaceholderText(el)) continue;
+                        if (isUIReplyLabel(el)) continue;
                         if (isSidebarContent(el)) continue;
                         if (isAdContent(el)) continue;
                         if (isFileAttachment(el)) continue;
@@ -2447,7 +2517,7 @@ class ChromeManager:
             }""", {"replyCountBefore": reply_count_before, "sentMessage": sent_message, "initMarkers": init_markers})
 
             text = clean_text(text)
-            if text and len(text) >= 20:
+            if text and len(text) >= 2:
                 log_info(f"{prefix}JS 智能提取成功（长度 {len(text)}）: {text[:100]}...")
                 return text
             elif text and len(text) >= 1:

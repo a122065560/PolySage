@@ -36,7 +36,7 @@ DEFAULT_CONFIG = {
         "start_signal": "<ok>",
         "arbitration_signal": "<结案>",
         "max_rounds": 20,
-        "timeout_seconds": 300,
+        "timeout_seconds": 180,
         "default_active_ais": ["DeepSeek", "智谱清言"],
         "opening_remarks": "你正在参与一场多AI群聊协作。\n发起话题的是主公，你需遵从主公的旨意。\n请等待主公提出复杂议题（如项目架构、创作大纲等），\n需要你与其他AI展开深度推演：质疑细节、补充边界、提供替代方案。\n请分轮次讨论，不急于给出最终结论。当多方确认讨论充分后，再整合为结构化方案。",
     },
@@ -524,9 +524,9 @@ class ConfigManager:
         if disc.get("opening_remarks", "").startswith(old_opening):
             disc["opening_remarks"] = DEFAULT_CONFIG["discussion"]["opening_remarks"]
             changed = True
-        # 超时时间：如果还是旧的120秒或600秒，更新为300秒
-        if disc.get("timeout_seconds") in (120, 600):
-            disc["timeout_seconds"] = 300
+        # 超时时间：如果还是旧的120秒/600秒/300秒，更新为180秒
+        if disc.get("timeout_seconds") in (120, 600, 300):
+            disc["timeout_seconds"] = 180
             changed = True
         # 讨论轮数：如果还是旧的50轮，恢复为默认20轮
         if disc.get("max_rounds") == 50:
