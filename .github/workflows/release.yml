@@ -100,6 +100,7 @@ jobs:
         run: iscc /DMyAppVersion=${{ env.VERSION }} common/installer.iss
 
       - name: 重命名为中文名
+        shell: bash
         run: |
           mv "common/PolySage-${{ env.VERSION }}-Windows.exe" "聚慧-${{ env.VERSION }}-Windows.exe"
           ls -la "聚慧-${{ env.VERSION }}-Windows.exe"
