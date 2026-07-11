@@ -21,7 +21,7 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 # 默认配置版本号（每次修改 DEFAULT_CONFIG 中的选择器/思考模式时递增）
 # 用于判断用户配置是否需要同步更新默认平台的配置
-DEFAULT_CONFIG_VERSION = 5
+DEFAULT_CONFIG_VERSION = 6
 
 # 默认配置
 DEFAULT_CONFIG = {
@@ -235,14 +235,18 @@ DEFAULT_CONFIG = {
                 "enabled": True,
                 "detect": {
                     "type": "dropdown",
-                    "label_selector": "button[aria-haspopup='menu']",
+                    # 豆包模式选择器：div[data-valid-btn="mode-select-action-btn"] 内的可见按钮
+                    # 该按钮文字为当前模式名（"快速"/"专家"/"办公任务"）
+                    "label_selector": "div[data-valid-btn='mode-select-action-btn'] button[data-dbx-name='button']",
                     "label_text": "专家",
                 },
                 "enable_steps": [
-                    {"action": "click", "selector": "button[aria-haspopup='menu']"},
+                    # 点击模式按钮展开下拉菜单
+                    {"action": "click", "selector": "div[data-valid-btn='mode-select-action-btn'] button[data-dbx-name='button']"},
                     {"action": "wait", "ms": 1000},
+                    # 点击"专家"菜单项
                     {"action": "click_text", "text": "专家",
-                     "selector": "[role='menuitem'], [role='option'], div[data-slot], li, button, div[class*='item'], div[class*='option']"},
+                     "selector": "[role='menuitem'], [data-slot='dropdown-menu-item']"},
                     {"action": "wait", "ms": 1000},
                 ],
             },
