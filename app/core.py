@@ -690,11 +690,7 @@ class HostedMode:
                 arb_ai = ai_list[0]
 
             strategist_ais = [a for a in ai_list if a["name"] != arb_ai["name"] and a["name"] not in ai_disabled and a["name"] not in self._removed_ais]
-            # 通知被禁用的AI
-            for a in ai_list:
-                if a["name"] != arb_ai["name"] and (a["name"] in ai_disabled or a["name"] in self._removed_ais):
-                    if progress_callback:
-                        progress_callback("status", "系统", f"⚠️ {a['name']} 连续超时/失败或被用户剔除，本轮跳过")
+            # 被剔除的AI不参与讨论，无需每轮重复提示（剔除时已通过🚫消息通知，军师通过【系统通知】收到）
 
             # Step 1: 军师先发言
             focal_points = extract_focal_points(prev_round_replies) if prev_round_replies else ""
@@ -1090,10 +1086,7 @@ class HostedMode:
         if not arb_ai:
             arb_ai = ai_list[0]
         strategist_ais = [a for a in ai_list if a["name"] != arb_ai["name"] and a["name"] not in ai_disabled and a["name"] not in self._removed_ais]
-        for a in ai_list:
-            if a["name"] != arb_ai["name"] and (a["name"] in ai_disabled or a["name"] in self._removed_ais):
-                if progress_callback:
-                    progress_callback("status", "系统", f"⚠️ {a['name']} 连续超时/失败或被用户剔除，本轮跳过")
+        # 被剔除的AI不参与讨论，无需每轮重复提示
 
         while round_count < self.max_rounds:
             if self._stop_requested:
