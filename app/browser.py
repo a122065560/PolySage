@@ -1376,6 +1376,21 @@ class ChromeManager:
                 "视频生成", "深入研究", "录音转写",
                 "音乐生成", "解题答疑", "AI 播客",
                 "数据分析", "更多",
+                # 各平台额度/限制提示（非AI回复，是系统警告）
+                "套餐额度达上限",
+                "额度已用完",
+                "额度不足",
+                "请求过于频繁",
+                "服务暂时不可用",
+                "请稍后重试",
+                "账户余额不足",
+                "超出使用限制",
+                "已达到今日使用上限",
+                "已达到使用上限",
+                "升级套餐",
+                "开通会员",
+                "积分不足",
+                "配额已用尽",
             ]
             # 智谱清言广告/推广内容特征
             ad_markers = [
@@ -1524,6 +1539,16 @@ class ChromeManager:
 
             # 6. 后处理：过滤残留的思考过程内容
             reply_text = self._strip_thinking_content(reply_text, ai_name)
+
+            # 7. 最终检查：如果回复是额度/限制警告，返回错误（不当作正常回复）
+            quota_markers = [
+                "套餐额度达上限", "额度已用完", "额度不足",
+                "账户余额不足", "超出使用限制", "已达到今日使用上限",
+                "已达到使用上限", "积分不足", "配额已用尽",
+            ]
+            if any(m in reply_text for m in quota_markers) and len(reply_text.strip()) < 100:
+                log_warning(f"[{ai_name}] 检测到额度/限制警告，不当作正常回复: {reply_text[:50]}")
+                raise Exception(f"额度不足: {reply_text[:50]}")
 
             log_info(f"[{ai_name}] 回复提取完成（长度 {len(reply_text)}）: {reply_text[:100]}...")
             return reply_text
