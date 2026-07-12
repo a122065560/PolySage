@@ -932,9 +932,13 @@ class HostedMode:
                             if progress_callback:
                                 progress_callback("ai_reply", ai["name"], f"[第{current_round}轮] {reply_clean}")
                                 round_spoken.add(ai["name"])
-                                # 状态栏更新
+                                # 状态栏更新：仍在回复中的AI保持(...)状态
+                                still_speaking = ", ".join(
+                                    a["name"] for a in strategist_ais
+                                    if a["name"] not in round_spoken and a["name"] not in round_failed
+                                )
                                 progress_callback("round_status", "系统",
-                                    self._build_compact_status(current_round, "", ai_list, round_spoken, round_failed, ai_disabled))
+                                    self._build_compact_status(current_round, still_speaking, ai_list, round_spoken, round_failed, ai_disabled))
                         else:
                             for t in tasks:
                                 if not t.done():
@@ -1315,8 +1319,13 @@ class HostedMode:
                             if progress_callback:
                                 progress_callback("ai_reply", ai["name"], f"[第{current_round}轮] {reply_clean}")
                                 round_spoken.add(ai["name"])
+                                # 状态栏更新：仍在回复中的AI保持(...)状态
+                                still_speaking = ", ".join(
+                                    a["name"] for a in strategist_ais
+                                    if a["name"] not in round_spoken and a["name"] not in round_failed
+                                )
                                 progress_callback("round_status", "系统",
-                                    self._build_compact_status(current_round, "", ai_list, round_spoken, round_failed, ai_disabled))
+                                    self._build_compact_status(current_round, still_speaking, ai_list, round_spoken, round_failed, ai_disabled))
                         else:
                             for t in tasks:
                                 if not t.done():
