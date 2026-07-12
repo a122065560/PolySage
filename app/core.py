@@ -113,12 +113,22 @@ class HostedMode:
         """
         检测短回复重复：如果AI回复<=20字且与上次回复内容相同，累计计数。
         连续2次相同短回复则自动剔除该AI。
+        另外：包含额度/限制警告的回复也视为短回复，触发剔除。
         """
-        SHORT_REPLY_THRESHOLD = 20
+        SHORT_REPLY_THRESHOLD = 50
         SHORT_REPLY_MAX_COUNT = 2
 
         reply_stripped = reply.strip()
-        if len(reply_stripped) > SHORT_REPLY_THRESHOLD:
+
+        # 额度/限制警告关键词：包含这些的回复视为无效短回复
+        quota_markers = [
+            "套餐额度达上限", "额度已用完", "额度不足",
+            "账户余额不足", "超出使用限制", "已达到今日使用上限",
+            "已达到使用上限", "积分不足", "配额已用尽",
+        ]
+        is_quota_warning = any(m in reply_stripped for m in quota_markers)
+
+        if len(reply_stripped) > SHORT_REPLY_THRESHOLD and not is_quota_warning:
             if ai_name in ai_short_replies:
                 del ai_short_replies[ai_name]
             return False
