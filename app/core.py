@@ -971,8 +971,10 @@ class HostedMode:
             # Step 3: 大脑统筹汇总，更新上一轮回复
             prev_round_replies = round_replies
 
-            # 对话框：轮次结束标记
+            # 对话框：轮次最终状态 + 结束标记
             if progress_callback:
+                progress_callback("round_marker", "系统",
+                    self._build_compact_status(current_round, "", ai_list, round_spoken, round_failed, ai_disabled))
                 progress_callback("round_marker", "系统", f"▲━━ 第{current_round}轮讨论结束 ━━▲")
 
             if len(round_replies) < 2:
@@ -1406,8 +1408,10 @@ class HostedMode:
 
             prev_round_replies = round_replies
 
-            # 对话框：轮次结束标记
+            # 对话框：轮次最终状态 + 结束标记
             if progress_callback:
+                progress_callback("round_marker", "系统",
+                    self._build_compact_status(current_round, "", ai_list, round_spoken, round_failed, ai_disabled))
                 progress_callback("round_marker", "系统", f"▲━━ 第{current_round}轮讨论结束 ━━▲")
 
             if len(round_replies) < 2:
