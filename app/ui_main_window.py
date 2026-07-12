@@ -1951,45 +1951,49 @@ class HostedModeTab(QWidget):
     def _render_status_html(self, text: str, dot_count: int):
         """将状态文本渲染为带颜色的HTML。
         只变色小括号内的符号，AI名和括号保持默认色。
-        省略号用空格补齐固定宽度，避免撑大行间距。
+        所有符号统一为3字符宽度，用&nbsp;补齐。
         """
         import re
         if not text:
             self.status_bar.setText("")
             return
 
-        # 动态省略号，用&nbsp;补齐到3字符宽度
-        # HTML会折叠普通空格，必须用&nbsp;才能保持宽度一致
+        # 统一宽度：所有括号内符号补齐到3字符
+        # 动态省略号: .→".  "  ..→".. " ...→"..."
         dots_raw = "." * dot_count
         dots = dots_raw + "&nbsp;" * (3 - dot_count)
 
+        # 单字符符号: ✓ ✕ ? → 补2个&nbsp;
+        # 显示为 "✓&nbsp;&nbsp;" "✕&nbsp;&nbsp;" "?&nbsp;&nbsp;"
+        W2 = "&nbsp;&nbsp;"
+
         result = text
 
-        # 正在回复: 【AI(...)】 → 【AI(<橙色动态点>)】
+        # 正在回复: 【AI(...)】 → 橙色动态点
         def replace_speaking(match):
             name = match.group(1)
             return f'【{name}(<span style="color:#FF6B00;">{dots}</span>)】'
 
         result = re.sub(r'【(.+?)\(\.\.\.\)】', replace_speaking, result)
 
-        # 已回复: 【AI(✓)】 → 【AI(<绿色>✓</绿色>)】
+        # 已回复: 【AI(✓)】 → 绿色✓ + 补宽
         def replace_spoken(match):
             name = match.group(1)
-            return f'【{name}(<span style="color:#16A34A;">✓</span>)】'
+            return f'【{name}(<span style="color:#16A34A;">✓{W2}</span>)】'
 
         result = re.sub(r'【(.+?)\(✓\)】', replace_spoken, result)
 
-        # 失败: 【AI(✕)】 → 【AI(<红色>✕</红色>)】
+        # 失败: 【AI(✕)】 → 红色✕ + 补宽
         def replace_failed(match):
             name = match.group(1)
-            return f'【{name}(<span style="color:#DC2626;">✕</span>)】'
+            return f'【{name}(<span style="color:#DC2626;">✕{W2}</span>)】'
 
         result = re.sub(r'【(.+?)\(✕\)】', replace_failed, result)
 
-        # 等待中: 【AI(?)】 → 【AI(<黄色>?</黄色>)】
+        # 等待中: 【AI(?)】 → 黄色? + 补宽
         def replace_waiting(match):
             name = match.group(1)
-            return f'【{name}(<span style="color:#D97706;">?</span>)】'
+            return f'【{name}(<span style="color:#D97706;">?{W2}</span>)】'
 
         result = re.sub(r'【(.+?)\(\?\)】', replace_waiting, result)
 
