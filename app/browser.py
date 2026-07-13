@@ -1141,10 +1141,25 @@ class ChromeManager:
                         await page.keyboard.press("Control+A")
                         await page.keyboard.press("Delete")
                         await page.wait_for_timeout(200)
-                        # 用 keyboard.type 逐字输入（短消息，无换行问题）
+                        # 混合输入：粘贴大部分 + 打字尾部（比纯打字快 50 倍）
                         await input_el.click()
                         await page.wait_for_timeout(200)
-                        await self._type_message(page, message, delay=20, ai_name=ai_name)
+                        hybrid_ok = await self._type_message(page, message, delay=2, ai_name=ai_name)
+                        if not hybrid_ok:
+                            # execCommand 失败，回退到纯键盘输入（delay=1，快速）
+                            log_warning(f"[{ai_name}] 混合输入失败，回退到纯键盘输入（delay=1ms）")
+                            await input_el.click()
+                            await page.wait_for_timeout(200)
+                            await page.keyboard.press("Control+A")
+                            await page.keyboard.press("Delete")
+                            await page.wait_for_timeout(100)
+                            lines = message.split('\n')
+                            for i, line in enumerate(lines):
+                                if i > 0:
+                                    await page.keyboard.press("Shift+Enter")
+                                    await page.wait_for_timeout(20)
+                                if line:
+                                    await page.keyboard.type(line, delay=1)
                         await page.wait_for_timeout(800)
                         # 验证发送按钮是否已激活
                         btn_active = await page.evaluate("""() => {
@@ -1191,11 +1206,20 @@ class ChromeManager:
                             if paste_ok:
                                 await page.wait_for_timeout(500)
                             else:
-                                # 最终回退：再试一次 keyboard.type（慢速）
-                                log_warning(f"[{ai_name}] JS paste 也失败，再次尝试 keyboard.type（慢速）")
+                                # 最终回退：纯键盘输入（delay=1，快速）
+                                log_warning(f"[{ai_name}] JS paste 也失败，纯键盘输入（delay=1ms）")
                                 await input_el.click()
                                 await page.wait_for_timeout(200)
-                                await self._type_message(page, message, delay=50, ai_name=ai_name)
+                                await page.keyboard.press("Control+A")
+                                await page.keyboard.press("Delete")
+                                await page.wait_for_timeout(100)
+                                lines = message.split('\n')
+                                for i, line in enumerate(lines):
+                                    if i > 0:
+                                        await page.keyboard.press("Shift+Enter")
+                                        await page.wait_for_timeout(20)
+                                    if line:
+                                        await page.keyboard.type(line, delay=1)
                                 await page.wait_for_timeout(500)
                         # 最终检查：如果按钮仍灰色，不再清空输入框
                         # 保留文字内容，继续尝试发送（_click_send_button 有多种发送策略）
@@ -1288,10 +1312,25 @@ class ChromeManager:
                             await page.keyboard.press("Control+A")
                             await page.keyboard.press("Delete")
                             await page.wait_for_timeout(200)
-                            # 用 keyboard.type 逐字输入
+                            # 混合输入：粘贴大部分 + 打字尾部（比纯打字快 50 倍）
                             await input_el.click()
                             await page.wait_for_timeout(200)
-                            await self._type_message(page, message, delay=20, ai_name=ai_name)
+                            hybrid_ok = await self._type_message(page, message, delay=2, ai_name=ai_name)
+                            if not hybrid_ok:
+                                # execCommand 失败，回退到纯键盘输入（delay=1，快速）
+                                log_warning(f"[{ai_name}] 混合输入失败，回退到纯键盘输入（delay=1ms）")
+                                await input_el.click()
+                                await page.wait_for_timeout(200)
+                                await page.keyboard.press("Control+A")
+                                await page.keyboard.press("Delete")
+                                await page.wait_for_timeout(100)
+                                lines = message.split('\n')
+                                for i, line in enumerate(lines):
+                                    if i > 0:
+                                        await page.keyboard.press("Shift+Enter")
+                                        await page.wait_for_timeout(20)
+                                    if line:
+                                        await page.keyboard.type(line, delay=1)
                             await page.wait_for_timeout(800)
                             # 验证发送按钮是否已激活
                             btn_active = await page.evaluate("""() => {
@@ -1336,11 +1375,20 @@ class ChromeManager:
                                 if paste_ok:
                                     await page.wait_for_timeout(500)
                                 else:
-                                    # 最终回退：再试一次 keyboard.type（慢速）
-                                    log_warning(f"[{ai_name}] JS paste 也失败，再次尝试 keyboard.type（慢速）")
+                                    # 最终回退：纯键盘输入（delay=1，快速）
+                                    log_warning(f"[{ai_name}] JS paste 也失败，纯键盘输入（delay=1ms）")
                                     await input_el.click()
                                     await page.wait_for_timeout(200)
-                                    await self._type_message(page, message, delay=50, ai_name=ai_name)
+                                    await page.keyboard.press("Control+A")
+                                    await page.keyboard.press("Delete")
+                                    await page.wait_for_timeout(100)
+                                    lines = message.split('\n')
+                                    for i, line in enumerate(lines):
+                                        if i > 0:
+                                            await page.keyboard.press("Shift+Enter")
+                                            await page.wait_for_timeout(20)
+                                        if line:
+                                            await page.keyboard.type(line, delay=1)
                                     await page.wait_for_timeout(500)
                             log_info(f"[{ai_name}] 真实键盘输入完成（长度 {len(message)}）")
                         log_info(f"[{ai_name}] 消息已填充（长度 {len(message)}），开始发送...")
@@ -1858,27 +1906,80 @@ class ChromeManager:
         except Exception as e:
             log_warning(f"[{ai_name}] 激活输入框失败: {e}")
 
-    async def _type_message(self, page: Page, message: str, delay: int = 20,
-                            ai_name: str = "") -> None:
+    async def _type_message(self, page: Page, message: str, delay: int = 2,
+                            ai_name: str = "") -> bool:
         """
-        用真实键盘事件输入消息，正确处理换行。
+        混合输入消息：execCommand 粘贴大部分 + keyboard.type 尾部打字。
 
-        keyboard.type() 的 \\n 会被当作 Enter 键，在 contenteditable 元素中
-        可能触发表单提交。本方法将 \\n 转为 Shift+Enter（换行不提交）。
+        策略：
+        1. execCommand('insertText') 粘贴全部文字（快速，瞬间完成）
+        2. 删除尾部少量字符，再用 keyboard.type 重新输入（触发框架状态更新）
+        3. 键盘事件触发后，框架（Slate.js 等）读取 DOM 完整内容并更新内部状态
+        4. 发送按钮激活
+
+        比纯 keyboard.type 快 50-100 倍：
+        - 1000字消息：纯打字 20秒（delay=20ms），混合方式 <0.5秒
 
         Args:
             page: Playwright Page
             message: 要输入的消息文本
-            delay: 每个字符的延迟（毫秒）
+            delay: 尾部打字时每个字符的延迟（毫秒），默认 2ms
             ai_name: AI 名称（日志用）
+
+        Returns:
+            bool: True 表示输入成功，False 表示 execCommand 失败需回退
         """
-        lines = message.split('\n')
-        for i, line in enumerate(lines):
-            if i > 0:
+        # 短消息（<=30字）：直接用键盘输入，无需混合
+        if len(message) <= 30:
+            lines = message.split('\n')
+            for i, line in enumerate(lines):
+                if i > 0:
+                    await page.keyboard.press("Shift+Enter")
+                    await page.wait_for_timeout(30)
+                if line:
+                    await page.keyboard.type(line, delay=delay)
+            return True
+
+        # 长消息：混合模式（粘贴大部分 + 打字尾部）
+        TAIL_LEN = min(5, len(message))  # 尾部打字 5 个字符
+        bulk = message[:-TAIL_LEN] if TAIL_LEN > 0 else message
+        tail = message[-TAIL_LEN:] if TAIL_LEN > 0 else ""
+
+        # 步骤1：execCommand 粘贴大部分文字（快速）
+        inserted = await page.evaluate("""(msg) => {
+            const el = document.querySelector('textarea, [contenteditable="true"], [role="textbox"]');
+            if (!el) return false;
+            el.focus();
+            try {
+                return document.execCommand('insertText', false, msg);
+            } catch(e) {
+                return false;
+            }
+        }""", bulk)
+
+        if not inserted:
+            # execCommand 失败，返回 False 让调用方回退到纯键盘输入
+            log_warning(f"[{ai_name}] execCommand 粘贴失败，回退到纯键盘输入")
+            return False
+
+        # 步骤2：删除尾部 TAIL_LEN 个字符，再用键盘重新输入
+        # 这会触发框架的 input 事件链，使 Slate.js 等框架读取 DOM 并更新内部状态
+        await page.wait_for_timeout(100)
+        for _ in range(TAIL_LEN):
+            await page.keyboard.press("Backspace")
+            await page.wait_for_timeout(10)
+        await page.wait_for_timeout(50)
+
+        # 步骤3：用键盘输入尾部字符（触发框架状态更新）
+        for char in tail:
+            if char == '\n':
                 await page.keyboard.press("Shift+Enter")
-                await page.wait_for_timeout(50)
-            if line:
-                await page.keyboard.type(line, delay=delay)
+                await page.wait_for_timeout(30)
+            else:
+                await page.keyboard.type(char, delay=delay)
+
+        log_info(f"[{ai_name}] 混合输入完成（粘贴 {len(bulk)} 字 + 打字 {len(tail)} 字，共 {len(message)} 字）")
+        return True
 
     async def _click_send_button(self, page: Page, config_selector: str,
                                   input_el, ai_name: str, message: str = "",
@@ -2588,9 +2689,14 @@ class ChromeManager:
                     'div[class*="message-content"]:not([class*="think"])',
                     'div[class*="markdown-body"]:not([class*="think"])',
                     'div[class*="markdown-container"]',
+                    // 通义千问: generic markdown container (covers ds-markdown, markdown-item, etc.)
+                    'div[class*="markdown"]:not([class*="think"]):not([class*="input"]):not([class*="editor"])',
                     'div[class*="message__content"]',
                     'div[class*="answer-content"]',
                     'div[class*="reply-content"]',
+                    // 通义千问: conversation/chat item containers
+                    'div[class*="conversation-item"]:not([class*="input"])',
+                    'div[class*="chat-item"]:not([class*="input"])',
                     'div[class*="bubble"]:not([class*="input"]):not([class*="toolbar"])',
                     'div[data-role="assistant"]',
                     'article',
@@ -3010,6 +3116,8 @@ class ChromeManager:
             "div[class*='message-content']:not([class*='think'])",
             "div.ds-markdown:not(.ds-markdown--block)",
             "div[class*='markdown-body']:not([class*='think'])",
+            # 通义千问: generic markdown container
+            "div[class*='markdown']:not([class*='think']):not([class*='input']):not([class*='editor'])",
             # 智谱清言 风格
             "div[class*='answer']:not([class*='think'])",
             "div[class*='reply-content']:not([class*='think'])",
