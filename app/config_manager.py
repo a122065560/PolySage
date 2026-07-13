@@ -21,7 +21,7 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 # 默认配置版本号（每次修改 DEFAULT_CONFIG 中的选择器/思考模式时递增）
 # 用于判断用户配置是否需要同步更新默认平台的配置
-DEFAULT_CONFIG_VERSION = 7
+DEFAULT_CONFIG_VERSION = 8
 
 # 默认配置
 DEFAULT_CONFIG = {
@@ -52,7 +52,6 @@ DEFAULT_CONFIG = {
             "url": "https://chat.deepseek.com/",
             "enabled": True,
             "is_arbitrator": True,
-            "reply_mode": "compatible",
             "selectors": {
                 "input_textarea": "textarea",
                 "send_button": "div[class*='input'] div[role='button']:last-child",
@@ -83,7 +82,6 @@ DEFAULT_CONFIG = {
             "url": "https://chatglm.cn/",
             "enabled": True,
             "is_arbitrator": False,
-            "reply_mode": "compatible",
             "selectors": {
                 "input_textarea": "textarea",
                 "send_button": "div[class*='send'], div[class*='chat-input-send'], button[aria-label*='发送'], div.enter-icon-container",
@@ -123,7 +121,6 @@ DEFAULT_CONFIG = {
             "url": "https://www.qianwen.com/",
             "enabled": True,
             "is_arbitrator": False,
-            "reply_mode": "compatible",
             "selectors": {
                 "input_textarea": "div[contenteditable='true'][role='textbox'], textarea",
                 "send_button": "button[aria-label='发送'], button:has-text('发送')",
@@ -155,7 +152,6 @@ DEFAULT_CONFIG = {
             "url": "https://agent.minimaxi.com/",
             "enabled": True,
             "is_arbitrator": False,
-            "reply_mode": "text",
             "selectors": {
                 "input_textarea": "div[data-testid='message-textarea'], div[contenteditable='true'].tiptap, textarea, div[contenteditable='true']",
                 "send_button": "div[data-testid='send-button'], button[data-testid='send-button'], div[class*='send'], button[class*='send']",
@@ -187,7 +183,6 @@ DEFAULT_CONFIG = {
             "url": "https://www.kimi.com/",
             "enabled": True,
             "is_arbitrator": False,
-            "reply_mode": "compatible",
             "selectors": {
                 "input_textarea": "div.chat-input-editor[contenteditable='true'], div[contenteditable='true'][role='textbox'], textarea",
                 "send_button": "div.send-button-container, div[class*='send-button']",
@@ -220,7 +215,6 @@ DEFAULT_CONFIG = {
             "url": "https://www.doubao.com/chat/",
             "enabled": True,
             "is_arbitrator": False,
-            "reply_mode": "compatible",
             "selectors": {
                 "input_textarea": "textarea.semi-input-textarea, textarea",
                 "send_button": "div.send-btn-wrapper button[type='submit'], button[type='submit']",

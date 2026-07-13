@@ -1035,47 +1035,30 @@ class ChromeManager:
             log_info(f"[{ai_name}] 发送前状态: 回复区块={reply_count_before}, 内容长度={content_len_before}")
 
             # 1. 定位输入框并填充（带重试，粘贴文件后页面可能重渲染）
-            # 回复模式：txt=始终文件, text=始终文字, compatible=5000字以下文字/以上混合
-            reply_mode = ai_config.get("reply_mode", "compatible")
-            COMPAT_THRESHOLD = 5000
-            MAX_INLINE_LENGTH = 50000
+            # 统一策略：7000字以下全文字，7000字以上前7000字文字+超出部分转txt文件
+            TEXT_THRESHOLD = 7000
 
             file_content = None      # 写入txt文件的内容（None=不上传文件）
             text_after_upload = message  # 文件上传后发送的文字消息（默认=原始消息）
 
-            if reply_mode == "txt":
-                # TXT文件模式：全部内容转为文件
+            if len(message) > TEXT_THRESHOLD:
+                # 超过7000字：前7000字文字 + 超出部分转txt文件
+                file_content = message[TEXT_THRESHOLD:]
+                text_after_upload = message[:TEXT_THRESHOLD] + "\n\n[后续内容请见上传的文件]"
+
+            # 向后兼容：force_file_upload 参数（强制全部转文件）
+            if force_file_upload:
                 file_content = message
                 text_after_upload = "请先阅读上传的文件内容，然后根据文件中的内容进行回复。"
-            elif reply_mode == "text":
-                # 文字模式：始终用文字，不转文件
-                pass
-            elif reply_mode == "compatible":
-                # 兼容模式：5000字以下全文字，5000字以上前5000字文字+超出部分文件
-                if len(message) > COMPAT_THRESHOLD:
-                    file_content = message[COMPAT_THRESHOLD:]
-                    text_after_upload = message[:COMPAT_THRESHOLD] + "\n\n[后续内容请见上传的文件]"
-            # 向后兼容：force_file_upload 参数
-            if force_file_upload and file_content is None:
-                file_content = message
-                text_after_upload = "请先阅读上传的文件内容，然后根据文件中的内容进行回复。"
-            # 安全兜底：超长消息自动转文件
-            if file_content is None and len(message) > MAX_INLINE_LENGTH:
-                file_content = message
-                text_after_upload = message[:MAX_INLINE_LENGTH] + "\n\n[注意：消息过长，完整内容请见上传的文件]"
 
             need_file_upload = file_content is not None
             file_just_uploaded = False  # 标记刚上传了文件，需要用剪贴板粘贴而非 execCommand
             if need_file_upload:
                 import time as _time_for_file
-                if reply_mode == "txt":
-                    log_info(f"[{ai_name}] TXT文件模式：全部内容转为文件上传")
-                elif reply_mode == "compatible" and len(message) > COMPAT_THRESHOLD:
-                    log_info(f"[{ai_name}] 兼容模式：消息{len(message)}字 > {COMPAT_THRESHOLD}字，前{COMPAT_THRESHOLD}字文字+剩余转文件")
-                elif force_file_upload:
+                if force_file_upload:
                     log_info(f"[{ai_name}] 强制文件上传模式")
                 else:
-                    log_info(f"[{ai_name}] 消息过长（{len(message)}字 > {MAX_INLINE_LENGTH}字），转为文件上传...")
+                    log_info(f"[{ai_name}] 消息{len(message)}字 > {TEXT_THRESHOLD}字，前{TEXT_THRESHOLD}字文字 + 剩余{len(file_content)}字转文件")
                 import os
                 # 创建临时txt文件
                 tmp_dir = os.path.expanduser("~/.polysage/temp")
