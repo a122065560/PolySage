@@ -318,7 +318,8 @@ class HostedMode:
     async def _send_to(self, ai: dict, pages: dict, prompt: str,
                        progress_callback, timeout: int = None,
                        fast_wait: bool = False,
-                       force_file_upload: bool = False):
+                       force_file_upload: bool = False,
+                       file_recently_uploaded: bool = False):
         timeout = timeout or self.timeout
         max_retries = 3  # 页面失效时最多重建3次
 
@@ -346,7 +347,8 @@ class HostedMode:
                 reply = await self.chrome.send_and_wait(
                     page, prompt, ai,
                     timeout=timeout, fast_wait=fast_wait,
-                    force_file_upload=force_file_upload
+                    force_file_upload=force_file_upload,
+                    file_recently_uploaded=file_recently_uploaded
                 )
 
                 # === 大脑后处理：思考过滤（不再做二次提取） ===
@@ -509,6 +511,7 @@ class HostedMode:
             page = pages[name]
 
             # 0a. 上传文件到这个 AI 的页面（支持多文件）
+            files_uploaded = False
             if file_paths:
                 for fp in file_paths:
                     if fp and os.path.isfile(fp):
@@ -517,6 +520,7 @@ class HostedMode:
                             progress_callback("status", "系统", f"正在上传文件 {os.path.basename(fp)} 到 {name}...")
                         await self.chrome._upload_file(page, fp, name)
                         await asyncio.sleep(3)
+                        files_uploaded = True
 
             # 0b. 发送开场白
             init_prompt = self._init_prefix(ai, initialized, ai_list)
@@ -526,7 +530,11 @@ class HostedMode:
                 progress_callback("waiting", "系统", f"等待 {name} 确认...")
 
             # 0c. 等待回复（缩短超时，确认回复通常很快，使用快速检测）
-            reply_ok, err = await self._send_to(ai, pages, init_prompt, progress_callback, timeout=30, fast_wait=True)
+            # 传入 file_recently_uploaded：文件上传后 contenteditable 框架状态可能不一致，
+            # 需要 send_and_wait 使用 keyboard.type() 而非 execCommand
+            reply_ok, err = await self._send_to(ai, pages, init_prompt, progress_callback,
+                                                  timeout=30, fast_wait=True,
+                                                  file_recently_uploaded=files_uploaded)
             return (ai, reply_ok, err)
 
         # 并行执行所有 AI 的初始化
