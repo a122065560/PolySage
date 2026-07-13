@@ -387,6 +387,14 @@ class HostedMode:
                 is_page_error = ("closed" in error_msg.lower() or "target" in error_msg.lower()
                                  or "页面" in error_msg or "page" in error_msg.lower())
 
+                # 检查浏览器是否仍然存活（区分"页面被关"和"浏览器整体被关"）
+                if is_page_error and not self.chrome.is_browser_alive():
+                    # 浏览器已关闭，无法重建页面，立即返回永久错误
+                    log_error(f"[{ai['name']}] 浏览器已关闭，无法继续讨论")
+                    if progress_callback:
+                        progress_callback("ai_speaking", ai["name"], "False")
+                    return None, Exception(f"{ai['name']} 浏览器已关闭（BROWSER_CLOSED）")
+
                 if is_page_error and attempt < max_retries - 1:
                     # 如果AI已被用户剔除，不再重建页面
                     if ai["name"] in self._removed_ais:
@@ -565,6 +573,16 @@ class HostedMode:
             if err is not None:
                 if progress_callback:
                     progress_callback("error", ai["name"], str(err))
+                # 浏览器关闭：立即停止，不继续初始化其他AI
+                if "BROWSER_CLOSED" in str(err):
+                    self._is_running = False
+                    if progress_callback:
+                        progress_callback("status", "系统", "🛑 浏览器已关闭，讨论终止")
+                    return {
+                        "history": history, "final_result": None,
+                        "ended_by": "浏览器已关闭，讨论终止",
+                        "rounds": 0,
+                    }
                 log_warning(f"[{ai['name']}] 确认失败: {err}，跳过该AI，继续讨论")
                 failed_ais.add(ai["name"])
                 continue
@@ -785,6 +803,17 @@ class HostedMode:
             if err is not None:
                 if progress_callback:
                     progress_callback("error", arb_ai["name"], str(err))
+                # 浏览器关闭：立即停止讨论，不重试
+                if "BROWSER_CLOSED" in str(err):
+                    self._is_running = False
+                    self._save_discussion_state(ai_list, pages, history)
+                    if progress_callback:
+                        progress_callback("status", "系统", "🛑 浏览器已关闭，讨论终止")
+                    return {
+                        "history": history, "final_result": None,
+                        "ended_by": "浏览器已关闭，讨论终止",
+                        "rounds": round_count,
+                    }
                 consecutive_failures += 1
                 if consecutive_failures >= 5:
                     if progress_callback:
@@ -888,6 +917,21 @@ class HostedMode:
                             total -= 1
                             continue
                         if err is not None:
+                            # 浏览器关闭：立即停止讨论，不重试
+                            if "BROWSER_CLOSED" in str(err):
+                                self._is_running = False
+                                self._save_discussion_state(ai_list, pages, history)
+                                if progress_callback:
+                                    progress_callback("status", "系统", "🛑 浏览器已关闭，讨论终止")
+                                # 取消未完成任务
+                                for t in tasks:
+                                    if not t.done():
+                                        t.cancel()
+                                return {
+                                    "history": history, "final_result": None,
+                                    "ended_by": "浏览器已关闭，讨论终止",
+                                    "rounds": round_count,
+                                }
                             # 记录该AI连续失败次数
                             ai_name = ai["name"]
                             round_failed.add(ai_name)
@@ -1190,6 +1234,17 @@ class HostedMode:
             if err is not None:
                 if progress_callback:
                     progress_callback("error", arb_ai["name"], str(err))
+                # 浏览器关闭：立即停止讨论，不重试
+                if "BROWSER_CLOSED" in str(err):
+                    self._is_running = False
+                    self._save_discussion_state(ai_list, pages, history)
+                    if progress_callback:
+                        progress_callback("status", "系统", "🛑 浏览器已关闭，讨论终止")
+                    return {
+                        "history": history, "final_result": None,
+                        "ended_by": "浏览器已关闭，讨论终止",
+                        "rounds": round_count,
+                    }
                 consecutive_failures += 1
                 if consecutive_failures >= 5:
                     break
@@ -1283,6 +1338,20 @@ class HostedMode:
                             total -= 1
                             continue
                         if err is not None:
+                            # 浏览器关闭：立即停止讨论，不重试
+                            if "BROWSER_CLOSED" in str(err):
+                                self._is_running = False
+                                self._save_discussion_state(ai_list, pages, history)
+                                if progress_callback:
+                                    progress_callback("status", "系统", "🛑 浏览器已关闭，讨论终止")
+                                for t in tasks:
+                                    if not t.done():
+                                        t.cancel()
+                                return {
+                                    "history": history, "final_result": None,
+                                    "ended_by": "浏览器已关闭，讨论终止",
+                                    "rounds": round_count,
+                                }
                             ai_name = ai["name"]
                             round_failed.add(ai_name)
                             ai_fail_count[ai_name] = ai_fail_count.get(ai_name, 0) + 1

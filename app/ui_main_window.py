@@ -2327,6 +2327,12 @@ class MainWindow(QMainWindow):
             cs.append_status(f"⚠️ {ended_by}（共 {result.get('rounds', 0)} 轮）")
             return
 
+        # 浏览器关闭/异常终止
+        if "浏览器" in ended_by or "异常" in ended_by:
+            cs.append_status(f"🛑 {ended_by}（共 {result.get('rounds', 0)} 轮）")
+            self._show_toast(f"🛑 {ended_by}", 3000)
+            return
+
         if result.get("final_result"):
             if "结案" in ended_by:
                 title = f"⚖️ 军师已结案（共 {result['rounds']} 轮）"

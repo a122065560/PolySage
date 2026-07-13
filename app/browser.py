@@ -516,6 +516,22 @@ class ChromeManager:
         port = self.config.get("chrome", {}).get("debug_port", 9222)
         return is_port_in_use(port)
 
+    def is_browser_alive(self) -> bool:
+        """检测内置浏览器（Playwright context/browser）是否仍然存活。
+
+        用于区分"页面被用户关闭"和"浏览器整体关闭"：
+        - 返回 True：浏览器存活，页面可重建（仅页面被关闭）
+        - 返回 False：浏览器已关闭，页面无法重建，应停止讨论
+        """
+        # 系统浏览器模式：检查 Chrome 调试端口
+        browser_mode = self.config.get("chrome", {}).get("browser_mode", "built-in")
+        if browser_mode == "system":
+            return self.is_chrome_running()
+        # 内置浏览器模式：检查 Playwright context 是否存在且可用
+        if self._context is None and self._browser is None:
+            return False
+        return True
+
     def is_page_open(self, url: str) -> bool:
         """
         检测指定 URL 的页面是否仍然打开着。
@@ -1009,18 +1025,29 @@ class ChromeManager:
         # 检查页面是否已关闭，如果关闭则尝试重新获取
         try:
             if page.is_closed():
+                # 先检查浏览器是否存活（区分"页面被关"和"浏览器整体被关"）
+                if not self.is_browser_alive():
+                    raise Exception(f"{ai_name} 页面已关闭且浏览器不可用（BROWSER_CLOSED）")
                 log_warning(f"[{ai_name}] 页面已关闭，尝试重新获取页面...")
                 page = await self.get_or_create_page(ai_config["url"])
                 if page.is_closed():
                     raise Exception(f"页面重新获取失败: {ai_name} 页面仍然关闭")
                 log_info(f"[{ai_name}] 页面重新获取成功")
         except Exception as e:
+            # 如果已经是 BROWSER_CLOSED 错误，直接向上抛
+            if "BROWSER_CLOSED" in str(e):
+                raise
             if "Target page" in str(e) or "has been closed" in str(e) or page.is_closed():
+                # 检查浏览器是否存活
+                if not self.is_browser_alive():
+                    raise Exception(f"{ai_name} 浏览器已关闭（BROWSER_CLOSED）")
                 log_warning(f"[{ai_name}] 页面不可用({e})，尝试重新获取...")
                 try:
                     page = await self.get_or_create_page(ai_config["url"])
                     log_info(f"[{ai_name}] 页面重新获取成功")
                 except Exception as e2:
+                    if not self.is_browser_alive():
+                        raise Exception(f"{ai_name} 浏览器已关闭（BROWSER_CLOSED）")
                     raise Exception(f"页面不可用且重新获取失败: {e2}")
 
         try:

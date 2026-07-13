@@ -505,7 +505,14 @@ class WorkerThread(QThread):
             self.discussion_done.emit(result)
         except Exception as e:
             log_exception("讨论过程中发生异常", type(e), e, e.__traceback__)
-            self.toast.emit(f"讨论过程中出错:\n{e}")
+            # 确保即使异常也能触发 discussion_done，让 UI 正确重置
+            error_result = {
+                "history": [],
+                "final_result": None,
+                "ended_by": f"讨论异常: {e}",
+                "rounds": 0,
+            }
+            self.discussion_done.emit(error_result)
         finally:
             self._discussion_running = False
             self.button_state.emit(True, True)
@@ -532,7 +539,13 @@ class WorkerThread(QThread):
                 self.discussion_done.emit(result)
         except Exception as e:
             log_exception("继续讨论异常", type(e), e, e.__traceback__)
-            self.toast.emit(f"继续讨论出错:\n{e}")
+            error_result = {
+                "history": [],
+                "final_result": None,
+                "ended_by": f"讨论异常: {e}",
+                "rounds": 0,
+            }
+            self.discussion_done.emit(error_result)
         finally:
             self._discussion_running = False
             self.button_state.emit(True, True)
