@@ -3073,6 +3073,10 @@ class MainWindow(QMainWindow):
         if name not in self.active_ais:
             self._show_toast(f"{name} 不在议事厅内，无法设为军师")
             return
+        # 讨论进行中不允许换军师
+        if getattr(self, '_discussion_running', False):
+            self._show_toast(f"⚠️ 讨论进行中，不允许更换军师\n请等讨论结束后再设 {name} 为军师")
+            return
         self.config_mgr.set("discussion.arbitrator", name)
         # 同步更新 per-platform is_arbitrator 标记
         platforms = self.config_mgr.get_ai_platforms()
