@@ -1035,14 +1035,45 @@ class ChromeManager:
             log_info(f"[{ai_name}] 发送前状态: 回复区块={reply_count_before}, 内容长度={content_len_before}")
 
             # 1. 定位输入框并填充（带重试，粘贴文件后页面可能重渲染）
-            # 检查消息长度，超过50000字或 force_file_upload=True 时自动转为文件上传
+            # 回复模式：txt=始终文件, text=始终文字, compatible=5000字以下文字/以上混合
+            reply_mode = ai_config.get("reply_mode", "compatible")
+            COMPAT_THRESHOLD = 5000
             MAX_INLINE_LENGTH = 50000
-            need_file_upload = force_file_upload or len(message) > MAX_INLINE_LENGTH
+
+            file_content = None      # 写入txt文件的内容（None=不上传文件）
+            text_after_upload = message  # 文件上传后发送的文字消息（默认=原始消息）
+
+            if reply_mode == "txt":
+                # TXT文件模式：全部内容转为文件
+                file_content = message
+                text_after_upload = "请先阅读上传的文件内容，然后根据文件中的内容进行回复。"
+            elif reply_mode == "text":
+                # 文字模式：始终用文字，不转文件
+                pass
+            elif reply_mode == "compatible":
+                # 兼容模式：5000字以下全文字，5000字以上前5000字文字+超出部分文件
+                if len(message) > COMPAT_THRESHOLD:
+                    file_content = message[COMPAT_THRESHOLD:]
+                    text_after_upload = message[:COMPAT_THRESHOLD] + "\n\n[后续内容请见上传的文件]"
+            # 向后兼容：force_file_upload 参数
+            if force_file_upload and file_content is None:
+                file_content = message
+                text_after_upload = "请先阅读上传的文件内容，然后根据文件中的内容进行回复。"
+            # 安全兜底：超长消息自动转文件
+            if file_content is None and len(message) > MAX_INLINE_LENGTH:
+                file_content = message
+                text_after_upload = message[:MAX_INLINE_LENGTH] + "\n\n[注意：消息过长，完整内容请见上传的文件]"
+
+            need_file_upload = file_content is not None
             file_just_uploaded = False  # 标记刚上传了文件，需要用剪贴板粘贴而非 execCommand
             if need_file_upload:
                 import time as _time_for_file
-                if force_file_upload:
-                    log_info(f"[{ai_name}] 强制文件上传模式（避免文字过长导致AI平台罢工）")
+                if reply_mode == "txt":
+                    log_info(f"[{ai_name}] TXT文件模式：全部内容转为文件上传")
+                elif reply_mode == "compatible" and len(message) > COMPAT_THRESHOLD:
+                    log_info(f"[{ai_name}] 兼容模式：消息{len(message)}字 > {COMPAT_THRESHOLD}字，前{COMPAT_THRESHOLD}字文字+剩余转文件")
+                elif force_file_upload:
+                    log_info(f"[{ai_name}] 强制文件上传模式")
                 else:
                     log_info(f"[{ai_name}] 消息过长（{len(message)}字 > {MAX_INLINE_LENGTH}字），转为文件上传...")
                 import os
@@ -1051,8 +1082,8 @@ class ChromeManager:
                 os.makedirs(tmp_dir, exist_ok=True)
                 tmp_file = os.path.join(tmp_dir, f"prompt_{ai_name}_{int(_time_for_file.time())}.txt")
                 with open(tmp_file, "w", encoding="utf-8") as f:
-                    f.write(message)
-                log_info(f"[{ai_name}] 已创建临时文件: {tmp_file}")
+                    f.write(file_content)
+                log_info(f"[{ai_name}] 已创建临时文件: {tmp_file}（{len(file_content)}字）")
 
                 # 上传文件到AI页面
                 try:
@@ -1061,15 +1092,12 @@ class ChromeManager:
                     await page.wait_for_timeout(2000)
                     file_just_uploaded = True
                 except Exception as e:
-                    log_warning(f"[{ai_name}] 文件上传失败: {e}，回退到截断发送")
-                    # 上传失败则截断消息
-                    message = message[:MAX_INLINE_LENGTH] + "\n\n[注意：消息过长已被截断，完整内容请见上传的文件]"
+                    log_warning(f"[{ai_name}] 文件上传失败: {e}，回退到文字发送")
                     tmp_file = None
 
-                # 发送简短说明消息
+                # 设置上传后发送的文字消息
                 if tmp_file:
-                    short_msg = "请先阅读上传的文件内容，然后根据文件中的内容进行回复。"
-                    message = short_msg
+                    message = text_after_upload
 
             log_info(f"[{ai_name}] 定位输入框: {input_selector}")
             input_el = await self._try_locate(page, input_selector, state="visible", timeout=10000)

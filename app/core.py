@@ -772,10 +772,8 @@ class HostedMode:
                 progress_callback("round_status", "系统",
                     self._build_compact_status(round_count + 1, arb_ai["name"], ai_list, round_spoken, round_failed, ai_disabled))
 
-            # 军师发言：第一轮用文字发送话题，后续轮用txt文件发送（避免文字过长导致AI平台罢工）
-            arb_force_file = (round_count > 0)
-            arb_reply, err = await self._send_to(arb_ai, pages, arb_prompt, progress_callback,
-                                                  force_file_upload=arb_force_file)
+            # 军师发言：reply_mode由配置决定发送方式
+            arb_reply, err = await self._send_to(arb_ai, pages, arb_prompt, progress_callback)
             if err is not None:
                 if progress_callback:
                     progress_callback("error", arb_ai["name"], str(err))
@@ -860,11 +858,10 @@ class HostedMode:
                     progress_callback("round_status", "系统",
                         self._build_compact_status(current_round, ai_names, ai_list, round_spoken, round_failed, ai_disabled))
 
-                # 并行发送+等待（谋士始终用txt文件接收内容，避免文字过长导致AI平台罢工）
+                # 并行发送+等待（谋士的reply_mode由配置决定发送方式）
                 async def _send_and_receive(ai: dict) -> tuple:
                     try:
-                        reply, err = await self._send_to(ai, pages, ai_prompts[ai["name"]], progress_callback,
-                                                          force_file_upload=True)
+                        reply, err = await self._send_to(ai, pages, ai_prompts[ai["name"]], progress_callback)
                         return (ai, reply, err)
                     except Exception as e:
                         return (ai, None, e)
@@ -1180,10 +1177,8 @@ class HostedMode:
                 progress_callback("round_status", "系统",
                     self._build_compact_status(round_count + 1, arb_ai["name"], ai_list, round_spoken, round_failed, ai_disabled))
 
-            # 军师发言：第一轮用文字发送，后续轮用txt文件（避免文字过长导致AI平台罢工）
-            arb_force_file = (round_count > 0)
-            arb_reply, err = await self._send_to(arb_ai, pages, arb_prompt, progress_callback,
-                                                  force_file_upload=arb_force_file)
+            # 军师发言：reply_mode由配置决定发送方式
+            arb_reply, err = await self._send_to(arb_ai, pages, arb_prompt, progress_callback)
             if err is not None:
                 if progress_callback:
                     progress_callback("error", arb_ai["name"], str(err))
@@ -1261,8 +1256,7 @@ class HostedMode:
 
                 async def _send_and_receive_cont(ai: dict) -> tuple:
                     try:
-                        reply, err = await self._send_to(ai, pages, ai_prompts[ai["name"]], progress_callback,
-                                                          force_file_upload=True)
+                        reply, err = await self._send_to(ai, pages, ai_prompts[ai["name"]], progress_callback)
                         return (ai, reply, err)
                     except Exception as e:
                         return (ai, None, e)

@@ -1452,6 +1452,13 @@ class PlatformEditDialog(QDialog):
         self.url_edit.setFixedHeight(24)
         self.url_edit.setMinimumWidth(500)
         form_top.addRow("URL:", self.url_edit)
+
+        # 回复模式选择
+        self.reply_mode_combo = QComboBox()
+        self.reply_mode_combo.addItems(["compatible", "text", "txt"])
+        self.reply_mode_combo.setCurrentText(self.platform.get("reply_mode", "compatible"))
+        self.reply_mode_combo.setFixedHeight(24)
+        form_top.addRow("回复模式:", self.reply_mode_combo)
         layout.addLayout(form_top)
 
         # GroupBox 标题样式（覆盖全局QSS，确保标题完整显示）
@@ -1562,6 +1569,7 @@ class PlatformEditDialog(QDialog):
         self.platform["name"] = self.name_edit.text()
         self.platform["url"] = self.url_edit.text()
         self.platform["enabled"] = self.enabled_cb.isChecked()
+        self.platform["reply_mode"] = self.reply_mode_combo.currentText()
         for key, edit in self.sel_inputs.items():
             self.platform.setdefault("selectors", {})[key] = edit.text()
         # 保存思考模式配置（新格式：detect + enable_steps）
