@@ -1613,8 +1613,11 @@ class HostedMode:
         """
         使用 LM Studio 本地模型汇总讨论历史。
 
-        使用 /v1/completions 端点（纯文本 prompt，无需 Jinja 模板渲染），
-        绕过部分社区模型的 Jinja 模板损坏问题（Error 4028: No user query found）。
+        策略：
+        1. 优先用 /v1/completions 端点（纯文本 prompt，无 Jinja 模板渲染）
+           绕过社区模型的 Jinja 模板损坏问题（Error 4028）
+        2. 如果 /v1/completions 不受支持（HTTP 404），回退到 OpenAI SDK
+           的 chat/completions 端点
 
         Returns:
             str: 汇总结果
@@ -1626,8 +1629,27 @@ class HostedMode:
         base_url = lm.get("url", "http://127.0.0.1:1234/v1").rstrip("/")
         summary_prompt = build_summary_prompt(history)
 
-        # 构建纯文本 prompt（替代 chat messages）
-        # 用中文明确告知模型任务，避免英文模型产生歧义
+        # 先用 /v1/completions 端点尝试（纯文本，无 Jinja 模板渲染）
+        result = await self._lm_studio_completions(base_url, summary_prompt)
+        if result is not None and not result.startswith("LM Studio"):
+            return result
+
+        # 回退到 OpenAI SDK + chat/completions
+        log_warning("/v1/completions 不可用，回退到 OpenAI SDK chat/completions")
+        return await self._lm_studio_chat_sdk(base_url, summary_prompt)
+
+    async def _lm_studio_completions(
+        self, base_url: str, summary_prompt: str
+    ) -> Optional[str]:
+        """
+        用 /v1/completions 端点调用 LM Studio（纯文本，无 Jinja 模板）。
+
+        Returns:
+            str: 汇总结果，或 None（端点不支持时回退）
+        """
+        import httpx
+        import json
+
         full_prompt = (
             "请根据以下讨论历史，输出一份完整的、结构化的最终方案。\n\n"
             f"{summary_prompt}\n\n"
@@ -1635,11 +1657,7 @@ class HostedMode:
         )
 
         try:
-            import httpx
-            import json
-
             async with httpx.AsyncClient(trust_env=False, timeout=120.0) as client:
-
                 # 获取已加载的模型 ID
                 model_id = ""
                 try:
@@ -1651,8 +1669,6 @@ class HostedMode:
                 except Exception:
                     pass
 
-                # 使用 /v1/completions 端点（无 Jinja 模板渲染）
-                # 注意：LM Studio 的 /v1/completions 响应格式与 chat 不同
                 payload = {
                     "model": model_id,
                     "prompt": full_prompt,
@@ -1669,13 +1685,10 @@ class HostedMode:
                     json=payload,
                     timeout=120.0,
                 ) as resp:
+                    if resp.status_code == 404:
+                        return None  # 端点不受支持，回退
                     if resp.status_code != 200:
                         error_body = await resp.aread()
-                        # 如果 /v1/completions 不支持（旧版 LM Studio），回退到 chat 端点
-                        if resp.status_code == 404:
-                            return await self._lm_studio_chat_fallback(
-                                base_url, model_id, summary_prompt, client
-                            )
                         return (
                             f"LM Studio 请求失败 (HTTP {resp.status_code}): "
                             f"{error_body.decode('utf-8', errors='replace')}"
@@ -1692,7 +1705,6 @@ class HostedMode:
                             choices = chunk.get("choices", [])
                             if not choices:
                                 continue
-                            # completions 端点的 text 字段在 streaming 时可能在最外层或 delta 内
                             text = choices[0].get("text", "")
                             if not text:
                                 text = choices[0].get("delta", {}).get("text", "")
@@ -1706,59 +1718,63 @@ class HostedMode:
                 full_result = "".join(result_parts).strip()
                 if full_result:
                     return full_result
-                else:
-                    return "（LM Studio 未返回内容，请检查模型是否已加载）"
+                return "（LM Studio 未返回内容，请检查模型是否已加载）"
+
+        except Exception as e:
+            log_warning(f"/v1/completions 请求异常: {e}")
+            return None  # 异常时回退
+
+    async def _lm_studio_chat_sdk(
+        self, base_url: str, summary_prompt: str
+    ) -> str:
+        """
+        用 OpenAI SDK + chat/completions 端点调用 LM Studio 汇总。
+
+        对大多数模型（含标准 Jinja 模板），SDK 构造的请求体兼容性最好。
+        """
+        lm = self.config.get("lm_studio", {})
+        api_key = lm.get("api_key", "") or "not-needed"
+
+        full_content = (
+            "请根据以下讨论历史，输出一份完整的、结构化的最终方案。\n\n"
+            f"{summary_prompt}\n\n"
+            "最终方案："
+        )
+
+        try:
+            from openai import OpenAI
+            import httpx
+
+            http_client = httpx.Client(trust_env=False, timeout=120.0)
+            client = OpenAI(base_url=base_url, api_key=api_key, http_client=http_client)
+
+            # 获取已加载的模型 ID
+            model_id = ""
+            try:
+                models = client.models.list()
+                model_id = models.data[0].id if models.data else ""
+            except Exception:
+                pass
+
+            # 使用 chat/completions（单条 user 消息 + 一条 assistant 种子消息）
+            # assistant 种子消息提示模型以 assistant 角色开始回答，避免 Jinja 模板
+            # 在角色切换时渲染失败
+            stream = client.chat.completions.create(
+                model=model_id,
+                messages=[
+                    {"role": "user", "content": full_content},
+                ],
+                stream=True,
+                temperature=0.7,
+                max_tokens=4096,
+            )
+
+            result_parts = []
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    result_parts.append(chunk.choices[0].delta.content)
+
+            return "".join(result_parts).strip() or "（LM Studio 未返回内容）"
 
         except Exception as e:
             return f"LM Studio 结案失败: {e}\n\n请检查 LM Studio 是否已启动并加载模型。"
-
-    async def _lm_studio_chat_fallback(
-        self, base_url: str, model_id: str, summary_prompt: str,
-        client: "httpx.AsyncClient"
-    ) -> str:
-        """
-        /v1/completions 不可用时的回退方案：使用 /v1/chat/completions。
-
-        部分老版本 LM Studio 不支持 /v1/completions 端点。
-        此时尝试用最简单的 messages 格式尽量兼容 Jinja 模板。
-        """
-        import json
-        full_content = f"请根据以下讨论历史，输出一份完整的、结构化的最终方案。\n\n{summary_prompt}\n\n最终方案："
-
-        payload = {
-            "model": model_id,
-            "messages": [{"role": "user", "content": full_content}],
-            "stream": True,
-            "temperature": 0.7,
-            "max_tokens": 4096,
-        }
-
-        result_parts = []
-        async with client.stream(
-            "POST",
-            f"{base_url}/chat/completions",
-            json=payload,
-            timeout=120.0,
-        ) as resp:
-            if resp.status_code != 200:
-                error_body = await resp.aread()
-                return (
-                    f"LM Studio 请求失败 (HTTP {resp.status_code}): "
-                    f"{error_body.decode('utf-8', errors='replace')}"
-                )
-
-            async for line in resp.aiter_lines():
-                if not line.startswith("data: "):
-                    continue
-                chunk_data = line[6:].strip()
-                if chunk_data == "[DONE]":
-                    break
-                try:
-                    chunk = json.loads(chunk_data)
-                    delta = chunk.get("choices", [{}])[0].get("delta", {})
-                    if delta.get("content"):
-                        result_parts.append(delta["content"])
-                except json.JSONDecodeError:
-                    continue
-
-        return "".join(result_parts).strip()
