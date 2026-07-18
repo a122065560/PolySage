@@ -1613,7 +1613,8 @@ class HostedMode:
         """
         使用 LM Studio 本地模型汇总讨论历史。
 
-        支持流式输出。
+        支持流式输出。使用原始 HTTP 请求（不依赖 OpenAI SDK ），
+        避免 SDK 构造的请求体与 LM Studio Jinja 模板不兼容。
 
         Returns:
             str: 汇总结果
@@ -1622,41 +1623,79 @@ class HostedMode:
         if not lm.get("enabled"):
             return "错误：LM Studio 未启用，无法进行结案汇总。"
 
-        url = lm.get("url", "http://127.0.0.1:1234/v1")
-        api_key = lm.get("api_key", "") or "not-needed"
+        base_url = lm.get("url", "http://127.0.0.1:1234/v1").rstrip("/")
         summary_prompt = build_summary_prompt(history)
 
         try:
-            from openai import OpenAI
             import httpx
+            import json
 
-            # 创建不使用系统代理的 httpx 客户端，避免 Clash 等代理工具干扰本地连接
-            http_client = httpx.Client(trust_env=False, timeout=120.0)
-            client = OpenAI(base_url=url, api_key=api_key, http_client=http_client)
+            async with httpx.AsyncClient(trust_env=False, timeout=120.0) as client:
 
-            # 注意：本地模型的 Jinja 模板可能不支持 role="system"，
-            # 系统提示词合并到 user 消息中，避免 LM Studio 报错 4028
-            # （"Error rendering prompt with jinja template: No user query found"）
-            full_prompt = (
-                "你是讨论汇总助手，请根据讨论历史输出一份完整的、结构化的最终方案。\n\n"
-                + summary_prompt
-            )
+                # 第一步：获取已加载的模型 ID
+                model_id = ""
+                try:
+                    resp = await client.get(f"{base_url}/models", timeout=5.0)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data.get("data") and len(data["data"]) > 0:
+                            model_id = data["data"][0].get("id", "")
+                except Exception:
+                    pass
 
-            # 不指定 model（空字符串），让 LM Studio 默认使用当前加载的模型
-            stream = client.chat.completions.create(
-                model="",
-                messages=[
-                    {"role": "user", "content": full_prompt},
-                ],
-                stream=True,
-            )
+                # 第二步：构造清晰的 user+assistant 消息模版
+                # 某些模型的 Jinja 模板对有 role=user 但内容为空/不匹配时也会报错。
+                # 最稳妥的方式：用 user+assistant 一轮对话，强制触发 assistant 回答。
+                messages = [
+                    {
+                        "role": "user",
+                        "content": "你是讨论汇总助手，请根据讨论历史输出一份完整的、结构化的最终方案。\n\n"
+                                    + summary_prompt,
+                    },
+                ]
 
-            result_parts = []
-            for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    result_parts.append(chunk.choices[0].delta.content)
+                # 构建请求体
+                payload = {
+                    "model": model_id,
+                    "messages": messages,
+                    "stream": True,
+                    "temperature": 0.7,
+                    "max_tokens": -1,
+                }
 
-            return "".join(result_parts).strip()
+                # 第三步：流式请求
+                result_parts = []
+                async with client.stream(
+                    "POST",
+                    f"{base_url}/chat/completions",
+                    json=payload,
+                    timeout=120.0,
+                ) as resp:
+                    if resp.status_code != 200:
+                        error_body = await resp.aread()
+                        return (
+                            f"LM Studio 请求失败 (HTTP {resp.status_code}): "
+                            f"{error_body.decode('utf-8', errors='replace')}"
+                        )
+
+                    async for line in resp.aiter_lines():
+                        if line.startswith("data: "):
+                            chunk_data = line[6:].strip()
+                            if chunk_data == "[DONE]":
+                                break
+                            try:
+                                chunk = json.loads(chunk_data)
+                                delta = chunk.get("choices", [{}])[0].get("delta", {})
+                                if delta.get("content"):
+                                    result_parts.append(delta["content"])
+                            except json.JSONDecodeError:
+                                continue
+
+                full_result = "".join(result_parts).strip()
+                if full_result:
+                    return full_result
+                else:
+                    return "（LM Studio 未返回内容，请检查模型是否已加载）"
 
         except Exception as e:
             return f"LM Studio 结案失败: {e}\n\n请检查 LM Studio 是否已启动并加载模型。"
