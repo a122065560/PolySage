@@ -41,11 +41,8 @@ secrets/
 playwright-report/
 test-results/
 
-# 构建产物（build/ 目录中的 .app .dmg .exe 不提交）
-build/*.dmg
-build/*.exe
-build/*.msi
-build/聚慧.app
+# 构建产物（build/ 目录）
+build/
 # 项目根目录下的 .app（构建意外输出到根目录时忽略）
 /聚慧.app
 /聚慧-*.dmg
