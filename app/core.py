@@ -1634,22 +1634,19 @@ class HostedMode:
             http_client = httpx.Client(trust_env=False, timeout=120.0)
             client = OpenAI(base_url=url, api_key=api_key, http_client=http_client)
 
-            # 尝试获取已加载的模型
-            try:
-                models = client.models.list()
-                model_id = models.data[0].id if models.data else "default"
-            except Exception:
-                model_id = lm.get("summary_model", "default")
+            # 注意：本地模型的 Jinja 模板可能不支持 role="system"，
+            # 系统提示词合并到 user 消息中，避免 LM Studio 报错 4028
+            # （"Error rendering prompt with jinja template: No user query found"）
+            full_prompt = (
+                "你是讨论汇总助手，请根据讨论历史输出一份完整的、结构化的最终方案。\n\n"
+                + summary_prompt
+            )
 
-            # 流式输出
+            # 不指定 model（空字符串），让 LM Studio 默认使用当前加载的模型
             stream = client.chat.completions.create(
-                model=model_id,
+                model="",
                 messages=[
-                    {
-                        "role": "system",
-                        "content": "你是讨论汇总助手，请根据讨论历史输出一份完整的、结构化的最终方案。",
-                    },
-                    {"role": "user", "content": summary_prompt},
+                    {"role": "user", "content": full_prompt},
                 ],
                 stream=True,
             )
